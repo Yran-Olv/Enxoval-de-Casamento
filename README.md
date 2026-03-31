@@ -31,10 +31,10 @@ nano .env
 APP_URL=http://IP-DO-SERVIDOR
 PORT=3010
 
-DB_PASS=devlocal
+DB_PASS=yrandev
 
 JWT_SECRET=cole_um_secret_aqui
-ADMIN_PASSWORD=123456
+ADMIN_PASSWORD=yrandev
 ```
 
 ### 📄 `.env` completo (produção com Docker)
@@ -46,18 +46,22 @@ APP_URL=https://taiseyran.com.br
 # Porta no host (container app escuta em 3000 internamente)
 PORT=3010
 
-# Banco (docker-compose usa DB_HOST=db internamente)
+# Banco (produção via Docker Compose)
+# Opção A (recomendada aqui): variáveis separadas usadas no docker-compose
 DB_DIALECT=postgres
 DB_USER=enxoval
-DB_PASS=defina_uma_senha_forte
+DB_PASS=yrandev
 DB_NAME=enxoval
 DB_PORT=5432
 
+# Opção B (opcional): URL única, se preferir
+# DATABASE_URL="postgresql://enxoval:yrandev@localhost:5432/enxoval?schema=public"
+
 # Autenticação
 JWT_SECRET=gere_com_openssl_rand_hex_32
-ADMIN_PASSWORD=defina_uma_senha_forte
+ADMIN_PASSWORD=yrandev
 # Opcional: se não definir, usa sistemazapzap@gmail.com
-# ADMIN_EMAIL=sistemazapzap@gmail.com
+ADMIN_EMAIL=sistemazapzap@gmail.com
 ```
 
 ### 🔐 Gerar JWT_SECRET:
@@ -78,6 +82,8 @@ openssl rand -hex 32
 
 ```bash
 docker compose up -d --build
+docker compose down -v
+docker compose up -d
 ```
 
 👉 Aguarde (primeira vez demora)
@@ -165,6 +171,65 @@ docker compose up -d
 
 ---
 
+# 🔄 ATUALIZAR EM PRODUÇÃO (INCLUSIVE NOVAS TABELAS)
+
+Sempre que fizer alterações no projeto e enviar para o GitHub:
+
+```bash
+cd /home/deploy/taiseyran
+git pull origin main
+docker compose up -d --build
+```
+
+## ✅ Quando houver novas tabelas/colunas no banco (Prisma)
+
+Se você criou uma migration nova (ex.: `prisma/migrations/...`), pode seguir o mesmo comando acima.
+O container da aplicação já executa automaticamente:
+
+```bash
+npx tsx scripts/run-prisma.ts migrate deploy
+```
+
+antes de subir o servidor (veja `docker/entrypoint.sh`).
+
+### Fluxo recomendado para mudanças de banco:
+
+1. No seu ambiente de trabalho:
+   - alterar `prisma/schema.prisma`
+   - criar migration (exemplo):
+
+```bash
+DATABASE_URL="postgresql://enxoval:yrandev@localhost:5432/enxoval?schema=public" npm run db:migrate
+```
+
+2. Commitar e enviar para o GitHub (incluindo pasta `prisma/migrations`).
+3. Em produção:
+   - `git pull origin main`
+   - `docker compose up -d --build`
+4. Conferir logs:
+
+```bash
+docker compose logs -f app
+```
+
+## ⚠️ Se aparecer "local changes would be overwritten by merge"
+
+Execute antes do `git pull`:
+
+```bash
+git stash push -u -m "temp-prod"
+git pull origin main
+```
+
+Depois pode descartar o stash (quando não precisar):
+
+```bash
+git stash list
+git stash drop
+```
+
+---
+
 # 🛠️ COMANDOS ÚTEIS
 
 ```bash
@@ -172,40 +237,6 @@ docker compose ps
 docker compose logs -f
 docker compose down
 docker compose up -d --build
-```
-
----
-
-# 💻 MODO DESENVOLVIMENTO (PC)
-
-```bash
-docker compose -f docker-compose.dev.yml up -d
-```
-
-Depois:
-
-```bash
-npm install
-npm run db:migrate
-npm run dev
-```
-
-Abrir:
-http://localhost:3000
-
-### 📄 `.env` completo (desenvolvimento local)
-
-```env
-# Se usar docker-compose.dev.yml:
-# usuário: enxoval | senha: devlocal | porta: 5433
-DATABASE_URL=postgresql://enxoval:devlocal@127.0.0.1:5433/enxoval?schema=public
-
-JWT_SECRET=dev_altere_em_producao
-ADMIN_PASSWORD=admin123
-# Opcional:
-# ADMIN_EMAIL=sistemazapzap@gmail.com
-
-PORT=3000
 ```
 
 ---
@@ -277,7 +308,6 @@ No Xcode:
 - Sempre que alterar front-end, rode novamente:
 
 ```bash
-npm run mobile:sync -- --mode mobile
 npm run mobile:sync
 ```
 

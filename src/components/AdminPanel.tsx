@@ -39,6 +39,12 @@ export default function AdminPanel() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [formData, setFormData] = useState<any>({});
   const [selectedRegistryIds, setSelectedRegistryIds] = useState<string[]>([]);
+  const [adminProfile, setAdminProfile] = useState({
+    email: '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [notice, setNotice] = useState<Notice | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const registryHeaderCheckboxRef = useRef<HTMLInputElement>(null);
@@ -77,6 +83,7 @@ export default function AdminPanel() {
     try {
       const data = await api.get('/me');
       setUser(data.user);
+      setAdminProfile((prev) => ({ ...prev, email: String(data.user?.email ?? '') }));
       fetchData();
     } catch (err) {
       setUser(null);
@@ -161,6 +168,32 @@ export default function AdminPanel() {
     }
   };
 
+  const handleSaveAdminProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminProfile.newPassword && adminProfile.newPassword !== adminProfile.confirmPassword) {
+      showNotice('error', 'Nova senha e confirmação não conferem.');
+      return;
+    }
+    try {
+      const data = await api.post('/admin/profile', {
+        email: adminProfile.email,
+        currentPassword: adminProfile.currentPassword,
+        newPassword: adminProfile.newPassword || undefined,
+      });
+      setUser(data.user);
+      setAdminProfile((prev) => ({
+        ...prev,
+        email: data.user?.email || prev.email,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      }));
+      showNotice('success', 'Conta do administrador atualizada com sucesso.');
+    } catch (error: any) {
+      showNotice('error', error?.message || 'Não foi possível atualizar a conta.');
+    }
+  };
+
   const handleTestWhatsApp = async () => {
     try {
       await api.post('/whatsapp/test', {
@@ -226,6 +259,18 @@ export default function AdminPanel() {
       },
     });
   };
+
+  const registryTotalValue = registry.reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+  const registryByStatus = registry.reduce(
+    (acc, item) => {
+      if (item.status === 'Disponível') acc.available += 1;
+      if (item.status === 'Reservado') acc.reserved += 1;
+      if (item.status === 'Comprado') acc.bought += 1;
+      return acc;
+    },
+    { available: 0, reserved: 0, bought: 0 }
+  );
+  const boughtProgress = registry.length ? Math.round((registryByStatus.bought / registry.length) * 100) : 0;
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gold font-serif text-2xl animate-pulse">Verificando Acesso...</div>;
 
@@ -377,8 +422,78 @@ export default function AdminPanel() {
         </div>
 
         <div className="overflow-x-auto">
+          {activeTab === 'registry' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
+              <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                <p className="text-[10px] uppercase tracking-widest opacity-50">Total de Itens</p>
+                <p className="text-3xl font-serif mt-2">{registry.length}</p>
+              </div>
+              <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                <p className="text-[10px] uppercase tracking-widest opacity-50">Valor Total</p>
+                <p className="text-3xl font-serif mt-2">R$ {registryTotalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                <p className="text-[10px] uppercase tracking-widest opacity-50">Disponíveis</p>
+                <p className="text-3xl font-serif mt-2">{registryByStatus.available}</p>
+              </div>
+              <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                <p className="text-[10px] uppercase tracking-widest opacity-50">Reservados</p>
+                <p className="text-3xl font-serif mt-2">{registryByStatus.reserved}</p>
+              </div>
+              <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                <p className="text-[10px] uppercase tracking-widest opacity-50">Comprados</p>
+                <p className="text-3xl font-serif mt-2">{registryByStatus.bought} <span className="text-sm opacity-60">({boughtProgress}%)</span></p>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'settings' ? (
             <div className="max-w-3xl">
+              <form onSubmit={handleSaveAdminProfile} className="space-y-4 mb-10 p-6 rounded-2xl border border-gold/10 bg-white/40">
+                <h4 className="text-2xl font-serif">Conta do Administrador</h4>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Novo E-mail</label>
+                  <input
+                    type="email"
+                    required
+                    value={adminProfile.email}
+                    onChange={e => setAdminProfile({ ...adminProfile, email: e.target.value })}
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Senha Atual</label>
+                  <input
+                    type="password"
+                    required
+                    value={adminProfile.currentPassword}
+                    onChange={e => setAdminProfile({ ...adminProfile, currentPassword: e.target.value })}
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nova Senha (opcional)</label>
+                  <input
+                    type="password"
+                    value={adminProfile.newPassword}
+                    onChange={e => setAdminProfile({ ...adminProfile, newPassword: e.target.value })}
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Confirmar Nova Senha</label>
+                  <input
+                    type="password"
+                    value={adminProfile.confirmPassword}
+                    onChange={e => setAdminProfile({ ...adminProfile, confirmPassword: e.target.value })}
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
+                  />
+                </div>
+                <button type="submit" className="px-8 py-3 bg-ink text-white rounded-xl text-[10px] uppercase tracking-widest font-bold">
+                  Atualizar Login do Administrador
+                </button>
+              </form>
+
               <form onSubmit={handleSavePix} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Chave PIX</label>

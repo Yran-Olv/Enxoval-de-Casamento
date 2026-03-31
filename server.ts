@@ -149,6 +149,56 @@ async function sendReservationToWhaticket(
   }
 }
 
+async function sendPixDonationToWhaticket(
+  settings: {
+    whatsappNumber: string;
+    whaticketToken: string;
+    whaticketUserId: string;
+    whaticketQueueId: string;
+    whaticketSign: boolean;
+    whaticketClose: boolean;
+  },
+  payload: { nome: string; whatsapp: string; valor?: number; mensagem?: string }
+) {
+  const number = (settings.whatsappNumber || "").replace(/\D/g, "");
+  const token = settings.whaticketToken?.trim();
+  if (!number || !token) return;
+
+  const valorFmt =
+    typeof payload.valor === "number" && Number.isFinite(payload.valor)
+      ? `R$ ${payload.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "Não informado";
+  const bodyText =
+    "Novo aviso de doação PIX no site.\n" +
+    `Nome: ${payload.nome}\n` +
+    `WhatsApp: ${payload.whatsapp}\n` +
+    `Valor: ${valorFmt}\n` +
+    `Mensagem: ${payload.mensagem?.trim() || "(sem mensagem)"}`;
+
+  const body = {
+    number,
+    body: bodyText,
+    userId: settings.whaticketUserId || "",
+    queueId: settings.whaticketQueueId || "",
+    sendSignature: settings.whaticketSign,
+    closeTicket: settings.whaticketClose,
+  };
+
+  const resp = await fetch("https://api.multivus.com.br/api/messages/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const out = await resp.text();
+    throw new Error(`Whaticket falhou (${resp.status}): ${out}`);
+  }
+}
+
 async function sendWhaticketTestMessage(
   settings: {
     whatsappNumber: string;
@@ -253,6 +303,79 @@ app.get("/api/me", (req, res) => {
     res.json({ user: decoded });
   } catch (err) {
     res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+app.post("/api/admin/profile", authenticate, async (req: any, res) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword ?? "");
+    const newEmailRaw = String(req.body?.email ?? "").trim().toLowerCase();
+    const newPassword = String(req.body?.newPassword ?? "");
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Senha atual é obrigatória." });
+    }
+
+    const envAdminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
+    const envAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+
+    const tokenUserEmail = String(req.user?.email ?? "").trim().toLowerCase();
+    let dbUser = req.user?.id
+      ? await prisma.user.findUnique({ where: { id: String(req.user.id) } })
+      : null;
+    if (!dbUser && tokenUserEmail) {
+      dbUser = await prisma.user.findUnique({ where: { email: tokenUserEmail } });
+    }
+
+    let isValidCurrentPassword = false;
+    if (dbUser) {
+      isValidCurrentPassword = await bcrypt.compare(currentPassword, dbUser.password);
+    } else if (tokenUserEmail === envAdminEmail) {
+      isValidCurrentPassword = currentPassword === envAdminPassword;
+    }
+    if (!isValidCurrentPassword) {
+      return res.status(401).json({ error: "Senha atual inválida." });
+    }
+
+    const finalEmail = (newEmailRaw || tokenUserEmail || envAdminEmail).toLowerCase();
+    if (!finalEmail) {
+      return res.status(400).json({ error: "E-mail inválido." });
+    }
+
+    const finalPassword = newPassword.trim() || currentPassword;
+    let savedUser;
+    if (dbUser) {
+      const updateData: any = {};
+      if (finalEmail && finalEmail !== dbUser.email) updateData.email = finalEmail;
+      if (newPassword.trim()) updateData.password = await bcrypt.hash(newPassword, 10);
+      savedUser =
+        Object.keys(updateData).length > 0
+          ? await prisma.user.update({ where: { id: dbUser.id }, data: updateData })
+          : dbUser;
+    } else {
+      savedUser = await prisma.user.create({
+        data: {
+          email: finalEmail,
+          password: await bcrypt.hash(finalPassword, 10),
+          role: "admin",
+        },
+      });
+    }
+
+    const token = jwt.sign(
+      { id: savedUser.id, email: savedUser.email, role: savedUser.role },
+      JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+    res.cookie("token", token, authCookie);
+    return res.json({ user: { email: savedUser.email, role: savedUser.role } });
+  } catch (err: unknown) {
+    console.error("POST /api/admin/profile:", err);
+    const code =
+      err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002"
+        ? 409
+        : 400;
+    const message = code === 409 ? "Este e-mail já está em uso." : "Falha ao atualizar conta de administrador.";
+    return res.status(code).json({ error: message });
   }
 });
 
@@ -419,6 +542,55 @@ app.post("/api/reservations", async (req, res) => {
   } catch (err) {
     console.error("POST /api/reservations:", err);
     res.status(500).json({ error: "Erro ao criar reserva." });
+  }
+});
+
+app.post("/api/pix-donations", async (req, res) => {
+  try {
+    const nome = String(req.body?.nome ?? "").trim();
+    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\D/g, "");
+    const mensagem = String(req.body?.mensagem ?? "").trim();
+    const rawValor = req.body?.valor;
+    const valor =
+      rawValor == null || rawValor === ""
+        ? undefined
+        : typeof rawValor === "number"
+          ? rawValor
+          : Number(String(rawValor).replace(/\s/g, "").replace(",", "."));
+
+    if (!nome) return res.status(400).json({ error: "Nome é obrigatório." });
+    if (!whatsapp) return res.status(400).json({ error: "WhatsApp é obrigatório." });
+    if (valor != null && !Number.isFinite(valor)) {
+      return res.status(400).json({ error: "Valor do PIX inválido." });
+    }
+
+    const settings = await prisma.settings.findUnique({ where: { id: "global" } });
+    if (!settings) {
+      return res.status(400).json({ error: "Configurações não encontradas." });
+    }
+
+    try {
+      await sendPixDonationToWhaticket(
+        {
+          whatsappNumber: settings.whatsappNumber,
+          whaticketToken: settings.whaticketToken,
+          whaticketUserId: settings.whaticketUserId,
+          whaticketQueueId: settings.whaticketQueueId,
+          whaticketSign: settings.whaticketSign,
+          whaticketClose: settings.whaticketClose,
+        },
+        { nome, whatsapp, valor, mensagem }
+      );
+    } catch (notifyErr) {
+      console.error("Falha ao enviar aviso de PIX via Whaticket:", notifyErr);
+      const msg = notifyErr instanceof Error ? notifyErr.message : "Falha no envio de WhatsApp.";
+      return res.status(400).json({ error: msg });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("POST /api/pix-donations:", err);
+    res.status(500).json({ error: "Erro ao registrar aviso de PIX." });
   }
 });
 

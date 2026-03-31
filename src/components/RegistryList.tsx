@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { EnxovalItem } from '../types';
-import { Gift, CheckCircle2, Clock, Send, X, Copy, Check } from 'lucide-react';
+import { Gift, CheckCircle2, Clock, Send, X, Copy, Check, HeartHandshake } from 'lucide-react';
 
 export default function RegistryList() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -10,10 +10,13 @@ export default function RegistryList() {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<EnxovalItem | null>(null);
   const [reservationForm, setReservationForm] = useState({ nome: '', whatsapp: '', mensagem: '' });
+  const [pixDonationForm, setPixDonationForm] = useState({ nome: '', whatsapp: '', valor: '', mensagem: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPixSubmitting, setIsPixSubmitting] = useState(false);
   const [pixSettings, setPixSettings] = useState({ pixKey: '', pixName: '' });
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [isPixModalOpen, setIsPixModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -74,6 +77,35 @@ export default function RegistryList() {
       navigator.clipboard.writeText(pixSettings.pixKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handlePixDonationNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsPixSubmitting(true);
+    try {
+      const valor =
+        pixDonationForm.valor.trim() === ""
+          ? undefined
+          : Number(pixDonationForm.valor.replace(/\s/g, '').replace(',', '.'));
+      if (valor != null && !Number.isFinite(valor)) {
+        throw new Error('Valor do PIX inválido.');
+      }
+
+      await api.post('/pix-donations', {
+        nome: pixDonationForm.nome,
+        whatsapp: pixDonationForm.whatsapp,
+        valor,
+        mensagem: pixDonationForm.mensagem,
+      });
+
+      showNotice('success', 'Aviso de PIX enviado com sucesso. Muito obrigado pelo carinho!');
+      setPixDonationForm({ nome: '', whatsapp: '', valor: '', mensagem: '' });
+      setIsPixModalOpen(false);
+    } catch (err) {
+      showNotice('error', err instanceof Error ? err.message : 'Falha ao enviar aviso de PIX.');
+    } finally {
+      setIsPixSubmitting(false);
     }
   };
 
@@ -166,6 +198,14 @@ export default function RegistryList() {
                   Titular: {pixSettings.pixName}
                 </p>
               )}
+              <div className="mt-6">
+                <button
+                  onClick={() => setIsPixModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-ink text-white text-[10px] uppercase tracking-widest font-bold hover:opacity-90 transition-opacity"
+                >
+                  <HeartHandshake size={14} /> Já fiz o PIX
+                </button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -337,6 +377,97 @@ export default function RegistryList() {
                 <p className="text-[10px] text-center opacity-40 px-6">
                   Ao confirmar, o item será reservado em seu nome. Por favor, entre em contato conosco para combinar a entrega.
                 </p>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPixModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsPixModalOpen(false)}
+              className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-lg bg-beige p-8 md:p-12 rounded-[40px] shadow-2xl border border-gold/20"
+            >
+              <button
+                onClick={() => setIsPixModalOpen(false)}
+                className="absolute top-8 right-8 text-gold/40 hover:text-gold transition-colors"
+              >
+                <X size={24} />
+              </button>
+
+              <div className="text-center mb-10">
+                <div className="w-16 h-16 bg-gold/10 text-gold rounded-full flex items-center justify-center mx-auto mb-6">
+                  <HeartHandshake size={30} />
+                </div>
+                <h3 className="text-4xl font-serif mb-2">Avisar Doação PIX</h3>
+                <p className="text-sm opacity-60 italic">Envie seus dados para os noivos receberem uma mensagem personalizada.</p>
+              </div>
+
+              <form onSubmit={handlePixDonationNotice} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu Nome</label>
+                  <input
+                    required
+                    type="text"
+                    value={pixDonationForm.nome}
+                    onChange={e => setPixDonationForm({ ...pixDonationForm, nome: e.target.value })}
+                    placeholder="Ex: Maria Silva"
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu WhatsApp</label>
+                  <input
+                    required
+                    type="tel"
+                    value={pixDonationForm.whatsapp}
+                    onChange={e => setPixDonationForm({ ...pixDonationForm, whatsapp: e.target.value })}
+                    placeholder="Ex: (11) 99999-9999"
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Valor enviado (opcional)</label>
+                  <input
+                    type="text"
+                    value={pixDonationForm.valor}
+                    onChange={e => setPixDonationForm({ ...pixDonationForm, valor: e.target.value })}
+                    placeholder="Ex: 150,00"
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem (opcional)</label>
+                  <textarea
+                    value={pixDonationForm.mensagem}
+                    onChange={e => setPixDonationForm({ ...pixDonationForm, mensagem: e.target.value })}
+                    placeholder="Deixe uma mensagem carinhosa..."
+                    rows={3}
+                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm resize-none"
+                  />
+                </div>
+
+                <button
+                  disabled={isPixSubmitting}
+                  type="submit"
+                  className="w-full py-5 bg-gold text-white rounded-2xl text-sm uppercase tracking-widest font-bold shadow-xl shadow-gold/20 flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  {isPixSubmitting ? 'Enviando...' : (<><Send size={18} /> Enviar Aviso</>)}
+                </button>
               </form>
             </motion.div>
           </div>
