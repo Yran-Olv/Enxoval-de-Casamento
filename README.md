@@ -37,6 +37,29 @@ JWT_SECRET=cole_um_secret_aqui
 ADMIN_PASSWORD=123456
 ```
 
+### 📄 `.env` completo (produção com Docker)
+
+```env
+# URL pública do site (com https quando tiver domínio/SSL)
+APP_URL=https://taiseyran.com.br
+
+# Porta no host (container app escuta em 3000 internamente)
+PORT=3010
+
+# Banco (docker-compose usa DB_HOST=db internamente)
+DB_DIALECT=postgres
+DB_USER=enxoval
+DB_PASS=defina_uma_senha_forte
+DB_NAME=enxoval
+DB_PORT=5432
+
+# Autenticação
+JWT_SECRET=gere_com_openssl_rand_hex_32
+ADMIN_PASSWORD=defina_uma_senha_forte
+# Opcional: se não definir, usa sistemazapzap@gmail.com
+# ADMIN_EMAIL=sistemazapzap@gmail.com
+```
+
 ### 🔐 Gerar JWT_SECRET:
 ```bash
 openssl rand -hex 32
@@ -170,6 +193,21 @@ npm run dev
 Abrir:
 http://localhost:3000
 
+### 📄 `.env` completo (desenvolvimento local)
+
+```env
+# Se usar docker-compose.dev.yml:
+# usuário: enxoval | senha: devlocal | porta: 5433
+DATABASE_URL=postgresql://enxoval:devlocal@127.0.0.1:5433/enxoval?schema=public
+
+JWT_SECRET=dev_altere_em_producao
+ADMIN_PASSWORD=admin123
+# Opcional:
+# ADMIN_EMAIL=sistemazapzap@gmail.com
+
+PORT=3000
+```
+
 ---
 
 # 📱 ANDROID E iOS (CAPACITOR)
@@ -189,6 +227,13 @@ nano .env.mobile
 Exemplo:
 
 ```env
+VITE_API_URL=https://taiseyran.com.br
+```
+
+### 📄 `.env.mobile` completo
+
+```env
+# URL base da API em produção (sem /api no final)
 VITE_API_URL=https://taiseyran.com.br
 ```
 

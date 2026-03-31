@@ -1,5 +1,5 @@
-# Imagem de produção: Node + build Vite + Prisma
-FROM node:20-bookworm-slim
+# Usa Node 22 (necessário pro Prisma/streams)
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
@@ -8,15 +8,17 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+
+# evita erro do lock quebrado
+RUN npm install
 
 COPY . .
 
-# Gera o client Prisma no build (não precisa de base real)
+# Gera Prisma + build
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 RUN npm run db:generate && npm run build
 
-# Não fixar URL da base na imagem — em runtime usam-se DB_* (Compose injeta).
+# limpa variável (runtime usa .env)
 ENV DATABASE_URL=
 
 ENV NODE_ENV=production
