@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+}
+
+model EnxovalItem {
+  id           String        @id @default(uuid())
+  nome         String
+  descricao    String?
+  valor        Float
+  prioridade   String        // Alta, Média, Baixa
+  status       String        @default("Disponível") // Disponível, Reservado, Comprado
+  reservadoPor String?
+  reservas     Reservation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model PurchasedItem {
+  id         String   @id @default(uuid())
+  nome       String
+  categoria  String
+  valor      Float
+  dataCompra DateTime @default(now())
+  createdAt  DateTime @default(now())
+}
+
+model Reservation {
+  id          String      @id @default(uuid())
+  enxovalId   String
+  enxovalItem EnxovalItem @relation(fields: [enxovalId], references: [id])
+  nome        String
+  whatsapp    String
+  mensagem    String?
+  dataReserva DateTime    @default(now())
+  createdAt   DateTime    @default(now())
+}
+
+model Settings {
+  id                String  @id @default("global")
+  pixKey            String  @default("")
+  pixName           String  @default("")
+  weddingDate       String  @default("2027-02-02")
+  whatsappNumber    String  @default("")
+  whaticketToken    String  @default("")
+  whaticketUserId   String  @default("")
+  whaticketQueueId  String  @default("")
+  whaticketTemplate String  @default("Nova reserva no site.\nItem: {item}\nConvidado: {nome}\nWhatsApp: {whatsapp}\nMensagem: {mensagem}")
+  whaticketSign     Boolean @default(true)
+  whaticketClose    Boolean @default(false)
+}

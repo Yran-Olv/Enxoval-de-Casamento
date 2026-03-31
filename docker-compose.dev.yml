@@ -1,0 +1,14 @@
+# Só PostgreSQL para desenvolvimento no seu PC (porta 5433).
+# Uso: docker compose -f docker-compose.dev.yml up -d
+# No .env local: DB_HOST=127.0.0.1  DB_PORT=5433  (e user/pass/db iguais abaixo)
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: enxoval-pg-local
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: enxoval
+      POSTGRES_PASSWORD: devlocal
+      POSTGRES_DB: enxoval

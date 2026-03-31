@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "Settings"
+ADD COLUMN "whatsappNumber" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "whaticketToken" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "whaticketUserId" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "whaticketQueueId" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "whaticketSign" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "whaticketClose" BOOLEAN NOT NULL DEFAULT false;
