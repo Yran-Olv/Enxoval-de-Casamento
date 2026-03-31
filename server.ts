@@ -78,6 +78,8 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const weddingDateRaw = String(body.weddingDate ?? "").trim();
   const weddingDate = /^\d{4}-\d{2}-\d{2}$/.test(weddingDateRaw) ? weddingDateRaw : "2027-02-02";
   const whatsappNumber = String(body.whatsappNumber ?? "").replace(/\D/g, "");
+  const whaticketApiUrl =
+    String(body.whaticketApiUrl ?? "").trim() || "https://api.whaticketup.com.br/api/messages/send";
   const whaticketToken = String(body.whaticketToken ?? "").trim();
   const whaticketUserId = String(body.whaticketUserId ?? "").trim();
   const whaticketQueueId = String(body.whaticketQueueId ?? "").trim();
@@ -92,6 +94,7 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     pixName,
     weddingDate,
     whatsappNumber,
+    whaticketApiUrl,
     whaticketToken,
     whaticketUserId,
     whaticketQueueId,
@@ -101,9 +104,25 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   };
 }
 
+function buildWhaticketOptionalIds(userIdRaw: string, queueIdRaw: string) {
+  const userId = String(userIdRaw ?? "").trim();
+  const queueId = String(queueIdRaw ?? "").trim();
+  const out: Record<string, number> = {};
+  if (userId) {
+    const parsed = Number(userId);
+    if (Number.isInteger(parsed) && parsed > 0) out.userId = parsed;
+  }
+  if (queueId) {
+    const parsed = Number(queueId);
+    if (Number.isInteger(parsed) && parsed > 0) out.queueId = parsed;
+  }
+  return out;
+}
+
 async function sendReservationToWhaticket(
   settings: {
     whatsappNumber: string;
+    whaticketApiUrl: string;
     whaticketToken: string;
     whaticketUserId: string;
     whaticketQueueId: string;
@@ -128,13 +147,12 @@ async function sendReservationToWhaticket(
   const body = {
     number,
     body: msg,
-    userId: settings.whaticketUserId || "",
-    queueId: settings.whaticketQueueId || "",
+    ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
     sendSignature: settings.whaticketSign,
     closeTicket: settings.whaticketClose,
   };
 
-  const resp = await fetch("https://api.multivus.com.br/api/messages/send", {
+  const resp = await fetch(settings.whaticketApiUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -152,6 +170,7 @@ async function sendReservationToWhaticket(
 async function sendPixDonationToWhaticket(
   settings: {
     whatsappNumber: string;
+    whaticketApiUrl: string;
     whaticketToken: string;
     whaticketUserId: string;
     whaticketQueueId: string;
@@ -178,13 +197,12 @@ async function sendPixDonationToWhaticket(
   const body = {
     number,
     body: bodyText,
-    userId: settings.whaticketUserId || "",
-    queueId: settings.whaticketQueueId || "",
+    ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
     sendSignature: settings.whaticketSign,
     closeTicket: settings.whaticketClose,
   };
 
-  const resp = await fetch("https://api.multivus.com.br/api/messages/send", {
+  const resp = await fetch(settings.whaticketApiUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -202,6 +220,7 @@ async function sendPixDonationToWhaticket(
 async function sendWhaticketTestMessage(
   settings: {
     whatsappNumber: string;
+    whaticketApiUrl: string;
     whaticketToken: string;
     whaticketUserId: string;
     whaticketQueueId: string;
@@ -219,13 +238,12 @@ async function sendWhaticketTestMessage(
   const body = {
     number,
     body: bodyText,
-    userId: settings.whaticketUserId || "",
-    queueId: settings.whaticketQueueId || "",
+    ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
     sendSignature: settings.whaticketSign,
     closeTicket: settings.whaticketClose,
   };
 
-  const resp = await fetch("https://api.multivus.com.br/api/messages/send", {
+  const resp = await fetch(settings.whaticketApiUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -518,6 +536,7 @@ app.post("/api/reservations", async (req, res) => {
         await sendReservationToWhaticket(
           {
             whatsappNumber: settings.whatsappNumber,
+            whaticketApiUrl: settings.whaticketApiUrl,
             whaticketToken: settings.whaticketToken,
             whaticketUserId: settings.whaticketUserId,
             whaticketQueueId: settings.whaticketQueueId,
@@ -573,6 +592,7 @@ app.post("/api/pix-donations", async (req, res) => {
       await sendPixDonationToWhaticket(
         {
           whatsappNumber: settings.whatsappNumber,
+          whaticketApiUrl: settings.whaticketApiUrl,
           whaticketToken: settings.whaticketToken,
           whaticketUserId: settings.whaticketUserId,
           whaticketQueueId: settings.whaticketQueueId,
@@ -630,6 +650,143 @@ app.get("/api/settings/admin", authenticate, async (req, res) => {
   res.json(settings);
 });
 
+app.get("/api/backup/export", authenticate, async (req, res) => {
+  try {
+    const [users, registry, purchased, reservations, settings] = await Promise.all([
+      prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.enxovalItem.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.purchasedItem.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.reservation.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.settings.findUnique({ where: { id: "global" } }),
+    ]);
+
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      app: "enxoval",
+      data: {
+        users,
+        registry,
+        purchased,
+        reservations,
+        settings,
+      },
+    };
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="enxoval-backup-${stamp}.json"`);
+    return res.status(200).json(backup);
+  } catch (err) {
+    console.error("GET /api/backup/export:", err);
+    return res.status(500).json({ error: "Falha ao exportar backup." });
+  }
+});
+
+app.post("/api/backup/import", authenticate, async (req, res) => {
+  try {
+    const payload = req.body?.backup ?? req.body;
+    const data = payload?.data ?? payload;
+    if (!data || typeof data !== "object") {
+      return res.status(400).json({ error: "Arquivo de backup inválido." });
+    }
+
+    const users = Array.isArray(data.users) ? data.users : [];
+    const registry = Array.isArray(data.registry) ? data.registry : [];
+    const purchased = Array.isArray(data.purchased) ? data.purchased : [];
+    const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+    const settings = data.settings && typeof data.settings === "object" ? data.settings : null;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.reservation.deleteMany({});
+      await tx.purchasedItem.deleteMany({});
+      await tx.enxovalItem.deleteMany({});
+      await tx.user.deleteMany({});
+      await tx.settings.deleteMany({});
+
+      if (settings) {
+        await tx.settings.create({
+          data: {
+            id: "global",
+            pixKey: String(settings.pixKey ?? ""),
+            pixName: String(settings.pixName ?? ""),
+            weddingDate: String(settings.weddingDate ?? "2027-02-02"),
+            whatsappNumber: String(settings.whatsappNumber ?? ""),
+            whaticketApiUrl: String(settings.whaticketApiUrl ?? "https://api.whaticketup.com.br/api/messages/send"),
+            whaticketToken: String(settings.whaticketToken ?? ""),
+            whaticketUserId: String(settings.whaticketUserId ?? ""),
+            whaticketQueueId: String(settings.whaticketQueueId ?? ""),
+            whaticketTemplate: String(settings.whaticketTemplate ?? ""),
+            whaticketSign: Boolean(settings.whaticketSign ?? true),
+            whaticketClose: Boolean(settings.whaticketClose ?? false),
+          },
+        });
+      } else {
+        await tx.settings.create({ data: { id: "global" } });
+      }
+
+      if (users.length > 0) {
+        await tx.user.createMany({
+          data: users.map((u: any) => ({
+            id: String(u.id),
+            email: String(u.email),
+            password: String(u.password),
+            role: String(u.role ?? "admin"),
+            createdAt: u.createdAt ? new Date(u.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      if (registry.length > 0) {
+        await tx.enxovalItem.createMany({
+          data: registry.map((i: any) => ({
+            id: String(i.id),
+            nome: String(i.nome),
+            descricao: i.descricao ? String(i.descricao) : null,
+            valor: Number(i.valor ?? 0),
+            prioridade: String(i.prioridade ?? "Média"),
+            status: String(i.status ?? "Disponível"),
+            reservadoPor: i.reservadoPor ? String(i.reservadoPor) : null,
+            createdAt: i.createdAt ? new Date(i.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      if (purchased.length > 0) {
+        await tx.purchasedItem.createMany({
+          data: purchased.map((p: any) => ({
+            id: String(p.id),
+            nome: String(p.nome),
+            categoria: String(p.categoria),
+            valor: Number(p.valor ?? 0),
+            dataCompra: p.dataCompra ? new Date(p.dataCompra) : new Date(),
+            createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      if (reservations.length > 0) {
+        await tx.reservation.createMany({
+          data: reservations.map((r: any) => ({
+            id: String(r.id),
+            enxovalId: String(r.enxovalId),
+            nome: String(r.nome ?? ""),
+            whatsapp: String(r.whatsapp ?? ""),
+            mensagem: r.mensagem ? String(r.mensagem) : null,
+            dataReserva: r.dataReserva ? new Date(r.dataReserva) : new Date(),
+            createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+          })),
+        });
+      }
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("POST /api/backup/import:", err);
+    return res.status(400).json({ error: "Falha ao importar backup. Verifique se o arquivo é válido." });
+  }
+});
+
 app.post("/api/settings", authenticate, async (req, res) => {
   try {
     const data = parseSettingsPayload(req.body ?? {});
@@ -656,6 +813,7 @@ app.post("/api/whatsapp/test", authenticate, async (req, res) => {
     await sendWhaticketTestMessage(
       {
         whatsappNumber: settings.whatsappNumber,
+        whaticketApiUrl: settings.whaticketApiUrl,
         whaticketToken: settings.whaticketToken,
         whaticketUserId: settings.whaticketUserId,
         whaticketQueueId: settings.whaticketQueueId,

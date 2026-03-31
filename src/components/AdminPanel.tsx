@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { ProdutoComprado, EnxovalItem, SettingsData } from '../types';
-import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload } from 'lucide-react';
 
 export default function AdminPanel() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -25,6 +25,7 @@ export default function AdminPanel() {
     pixKey: '',
     pixName: '',
     weddingDate: '2027-02-02',
+    whaticketApiUrl: 'https://api.whaticketup.com.br/api/messages/send',
     whaticketTemplate: 'Nova reserva no site.\nItem: {item}\nConvidado: {nome}\nWhatsApp: {whatsapp}\nMensagem: {mensagem}',
   });
 
@@ -39,6 +40,7 @@ export default function AdminPanel() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [formData, setFormData] = useState<any>({});
   const [selectedRegistryIds, setSelectedRegistryIds] = useState<string[]>([]);
+  const [settingsTab, setSettingsTab] = useState<'account' | 'general' | 'whatsapp' | 'backup'>('general');
   const [adminProfile, setAdminProfile] = useState({
     email: '',
     currentPassword: '',
@@ -46,6 +48,7 @@ export default function AdminPanel() {
     confirmPassword: '',
   });
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const registryHeaderCheckboxRef = useRef<HTMLInputElement>(null);
   const noticeTimeoutRef = useRef<number | null>(null);
@@ -56,6 +59,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (activeTab !== 'registry') setSelectedRegistryIds([]);
+    if (activeTab !== 'settings') setSettingsTab('general');
   }, [activeTab]);
 
   useEffect(() => {
@@ -260,6 +264,49 @@ export default function AdminPanel() {
     });
   };
 
+  const handleExportBackup = async () => {
+    try {
+      const backup = await api.get('/backup/export');
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `enxoval-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showNotice('success', 'Backup exportado com sucesso.');
+    } catch (error: any) {
+      showNotice('error', error?.message || 'Falha ao exportar backup.');
+    }
+  };
+
+  const handleImportBackup = async () => {
+    if (!backupFile) {
+      showNotice('error', 'Selecione um arquivo de backup (.json).');
+      return;
+    }
+    openConfirm({
+      title: 'Importar backup completo',
+      message: 'Isso substituirá todos os dados atuais (enxoval, reservas, comprados, configurações e usuários). Deseja continuar?',
+      confirmLabel: 'Importar e substituir',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          const content = await backupFile.text();
+          const parsed = JSON.parse(content);
+          await api.post('/backup/import', { backup: parsed });
+          setBackupFile(null);
+          showNotice('success', 'Backup importado com sucesso.');
+          fetchData();
+        } catch (error: any) {
+          showNotice('error', error?.message || 'Falha ao importar backup.');
+        }
+      },
+    });
+  };
+
   const registryTotalValue = registry.reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
   const registryByStatus = registry.reduce(
     (acc, item) => {
@@ -449,167 +496,140 @@ export default function AdminPanel() {
 
           {activeTab === 'settings' ? (
             <div className="max-w-3xl">
-              <form onSubmit={handleSaveAdminProfile} className="space-y-4 mb-10 p-6 rounded-2xl border border-gold/10 bg-white/40">
-                <h4 className="text-2xl font-serif">Conta do Administrador</h4>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Novo E-mail</label>
-                  <input
-                    type="email"
-                    required
-                    value={adminProfile.email}
-                    onChange={e => setAdminProfile({ ...adminProfile, email: e.target.value })}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Senha Atual</label>
-                  <input
-                    type="password"
-                    required
-                    value={adminProfile.currentPassword}
-                    onChange={e => setAdminProfile({ ...adminProfile, currentPassword: e.target.value })}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nova Senha (opcional)</label>
-                  <input
-                    type="password"
-                    value={adminProfile.newPassword}
-                    onChange={e => setAdminProfile({ ...adminProfile, newPassword: e.target.value })}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Confirmar Nova Senha</label>
-                  <input
-                    type="password"
-                    value={adminProfile.confirmPassword}
-                    onChange={e => setAdminProfile({ ...adminProfile, confirmPassword: e.target.value })}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <button type="submit" className="px-8 py-3 bg-ink text-white rounded-xl text-[10px] uppercase tracking-widest font-bold">
-                  Atualizar Login do Administrador
-                </button>
-              </form>
+              <div className="flex flex-wrap gap-3 mb-8">
+                {[
+                  { id: 'account', label: 'Conta Admin' },
+                  { id: 'general', label: 'Geral / PIX' },
+                  { id: 'whatsapp', label: 'WhatsApp' },
+                  { id: 'backup', label: 'Backup' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setSettingsTab(tab.id as 'account' | 'general' | 'whatsapp' | 'backup')}
+                    className={`px-5 py-3 rounded-xl text-[10px] uppercase tracking-widest font-bold border transition-all ${
+                      settingsTab === tab.id
+                        ? 'bg-gold text-white border-gold'
+                        : 'bg-white/50 text-gold/70 border-gold/10 hover:border-gold/30'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-              <form onSubmit={handleSavePix} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Chave PIX</label>
-                  <input 
-                    type="text" 
-                    value={pixSettings.pixKey || ''} 
-                    onChange={e => setPixSettings({...pixSettings, pixKey: e.target.value})} 
-                    placeholder="E-mail, CPF, Celular ou Chave Aleatória"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nome do Titular</label>
-                  <input 
-                    type="text" 
-                    value={pixSettings.pixName || ''} 
-                    onChange={e => setPixSettings({...pixSettings, pixName: e.target.value})} 
-                    placeholder="Nome completo do titular da conta"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Data do Casamento</label>
-                  <input
-                    type="date"
-                    required
-                    value={pixSettings.weddingDate || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, weddingDate: e.target.value })}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">WhatsApp para aviso de reserva</label>
-                  <input
-                    type="text"
-                    value={pixSettings.whatsappNumber || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, whatsappNumber: e.target.value.replace(/\D/g, '') })}
-                    placeholder="Ex.: 5585999999999 (pais+ddd+número)"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="md:col-span-2 space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Token Whaticket</label>
-                  <input
-                    type="password"
-                    value={pixSettings.whaticketToken || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, whaticketToken: e.target.value })}
-                    placeholder="Bearer token cadastrado na conexão"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                  <p className="text-[10px] uppercase tracking-widest opacity-50 ml-1">
-                    Gere/cadastre este token no painel do Whaticket: Conexões → Editar conexão → Token. Depois cole aqui.
-                  </p>
-                </div>
-                <div className="md:col-span-2 space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Template da mensagem WhatsApp</label>
-                  <textarea
-                    rows={5}
-                    value={pixSettings.whaticketTemplate || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })}
-                    placeholder={'Use variáveis: {item}, {nome}, {whatsapp}, {mensagem}'}
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none"
-                  />
-                  <p className="text-[10px] uppercase tracking-widest opacity-50 ml-1">
-                    Variáveis disponíveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">ID do atendente (opcional)</label>
-                  <input
-                    type="text"
-                    value={pixSettings.whaticketUserId || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, whaticketUserId: e.target.value })}
-                    placeholder="Ex.: 1"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">ID da fila (opcional)</label>
-                  <input
-                    type="text"
-                    value={pixSettings.whaticketQueueId || ''}
-                    onChange={e => setPixSettings({ ...pixSettings, whaticketQueueId: e.target.value })}
-                    placeholder="Ex.: 3"
-                    className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
-                  />
-                </div>
-                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <label className="flex items-center gap-3 px-4 py-3 border border-gold/10 rounded-xl bg-white/40 text-xs uppercase tracking-widest">
+              {settingsTab === 'account' && (
+                <form onSubmit={handleSaveAdminProfile} className="space-y-4 p-6 rounded-2xl border border-gold/10 bg-white/40">
+                  <h4 className="text-2xl font-serif">Conta do Administrador</h4>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Novo E-mail</label>
+                    <input type="email" required value={adminProfile.email} onChange={e => setAdminProfile({ ...adminProfile, email: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Senha Atual</label>
+                    <input type="password" required value={adminProfile.currentPassword} onChange={e => setAdminProfile({ ...adminProfile, currentPassword: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nova Senha (opcional)</label>
+                    <input type="password" value={adminProfile.newPassword} onChange={e => setAdminProfile({ ...adminProfile, newPassword: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Confirmar Nova Senha</label>
+                    <input type="password" value={adminProfile.confirmPassword} onChange={e => setAdminProfile({ ...adminProfile, confirmPassword: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <button type="submit" className="px-8 py-3 bg-ink text-white rounded-xl text-[10px] uppercase tracking-widest font-bold">
+                    Atualizar Login do Administrador
+                  </button>
+                </form>
+              )}
+
+              {settingsTab === 'general' && (
+                <form onSubmit={handleSavePix} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Chave PIX</label>
+                    <input type="text" value={pixSettings.pixKey || ''} onChange={e => setPixSettings({ ...pixSettings, pixKey: e.target.value })} placeholder="E-mail, CPF, Celular ou Chave Aleatória" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nome do Titular</label>
+                    <input type="text" value={pixSettings.pixName || ''} onChange={e => setPixSettings({ ...pixSettings, pixName: e.target.value })} placeholder="Nome completo do titular da conta" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Data do Casamento</label>
+                    <input type="date" required value={pixSettings.weddingDate || ''} onChange={e => setPixSettings({ ...pixSettings, weddingDate: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
+                    <Save size={16} /> Salvar Configurações Gerais
+                  </button>
+                </form>
+              )}
+
+              {settingsTab === 'whatsapp' && (
+                <form onSubmit={handleSavePix} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">URL da API WhatsApp</label>
+                    <input type="url" value={pixSettings.whaticketApiUrl || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketApiUrl: e.target.value })} placeholder="https://api.whaticketup.com.br/api/messages/send" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">WhatsApp para aviso</label>
+                    <input type="text" value={pixSettings.whatsappNumber || ''} onChange={e => setPixSettings({ ...pixSettings, whatsappNumber: e.target.value.replace(/\D/g, '') })} placeholder="Ex.: 5585999999999 (pais+ddd+número)" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Chave da API</label>
+                    <input type="password" value={pixSettings.whaticketToken || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketToken: e.target.value })} placeholder="Chave/token de autenticação da API" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Template da mensagem WhatsApp</label>
+                    <textarea rows={5} value={pixSettings.whaticketTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })} placeholder="Mensagem usada nos avisos automáticos do WhatsApp" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
+                      <Save size={16} /> Salvar WhatsApp
+                    </button>
+                    <button type="button" onClick={handleTestWhatsApp} className="px-10 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg">
+                      Testar WhatsApp
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {settingsTab === 'backup' && (
+                <div className="space-y-6">
+                  <div className="p-6 rounded-2xl border border-gold/10 bg-white/40">
+                    <h4 className="text-2xl font-serif mb-2">Exportar Backup</h4>
+                    <p className="text-sm opacity-70 mb-4">
+                      Baixa um arquivo JSON com itens do enxoval, reservas, itens comprados, configurações e usuários.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleExportBackup}
+                      className="px-8 py-3 bg-ink text-white rounded-xl text-[10px] uppercase tracking-widest font-bold inline-flex items-center gap-2"
+                    >
+                      <Download size={14} /> Exportar Backup
+                    </button>
+                  </div>
+
+                  <div className="p-6 rounded-2xl border border-red-300/30 bg-red-50/40">
+                    <h4 className="text-2xl font-serif mb-2">Importar Backup</h4>
+                    <p className="text-sm opacity-70 mb-4">
+                      Importa um backup completo e substitui todos os dados atuais do sistema.
+                    </p>
                     <input
-                      type="checkbox"
-                      checked={pixSettings.whaticketSign ?? true}
-                      onChange={e => setPixSettings({ ...pixSettings, whaticketSign: e.target.checked })}
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={(e) => setBackupFile(e.target.files?.[0] || null)}
+                      className="block w-full text-sm mb-4"
                     />
-                    Assinar mensagem
-                  </label>
-                  <label className="flex items-center gap-3 px-4 py-3 border border-gold/10 rounded-xl bg-white/40 text-xs uppercase tracking-widest">
-                    <input
-                      type="checkbox"
-                      checked={pixSettings.whaticketClose ?? false}
-                      onChange={e => setPixSettings({ ...pixSettings, whaticketClose: e.target.checked })}
-                    />
-                    Encerrar ticket
-                  </label>
+                    <button
+                      type="button"
+                      onClick={handleImportBackup}
+                      className="px-8 py-3 bg-red-500 text-white rounded-xl text-[10px] uppercase tracking-widest font-bold inline-flex items-center gap-2 disabled:opacity-50"
+                      disabled={!backupFile}
+                    >
+                      <Upload size={14} /> Importar Backup
+                    </button>
+                  </div>
                 </div>
-                <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
-                  <Save size={16} /> Salvar Configurações
-                </button>
-                <button
-                  type="button"
-                  onClick={handleTestWhatsApp}
-                  className="px-10 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg ml-3"
-                >
-                  Testar WhatsApp
-                </button>
-              </form>
+              )}
             </div>
           ) : (
             <table className="w-full text-left border-collapse">

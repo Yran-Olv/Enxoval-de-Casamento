@@ -32,6 +32,7 @@ export interface SettingsData {
   pixName: string;
   weddingDate: string;
   whatsappNumber?: string;
+  whaticketApiUrl?: string;
   whaticketToken?: string;
   whaticketUserId?: string;
   whaticketQueueId?: string;

@@ -31,10 +31,10 @@ nano .env
 APP_URL=http://IP-DO-SERVIDOR
 PORT=3010
 
-DB_PASS=yrandev
+DB_PASS=devlocal
 
 JWT_SECRET=cole_um_secret_aqui
-ADMIN_PASSWORD=yrandev
+ADMIN_PASSWORD=123456
 ```
 
 ### 📄 `.env` completo (produção com Docker)
