@@ -38,6 +38,8 @@ export interface SettingsData {
   whaticketUserId?: string;
   whaticketQueueId?: string;
   whaticketTemplate?: string;
+  guestReplyTemplate?: string;
+  guestPixTemplate?: string;
   whaticketSign?: boolean;
   whaticketClose?: boolean;
 }

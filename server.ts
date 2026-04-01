@@ -57,6 +57,15 @@ const DEFAULT_WHATSAPP_RESERVATION_TEMPLATE =
   "Opções de presente: podem comprar o item por conta própria e entregar aos noivos, ou enviar o valor via PIX:\n" +
   "Chave PIX: {pixKey}\n" +
   "Titular: {pixName}";
+const DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE =
+  "Oi, {nome}! Obrigado pelo carinho com {couple}. 💛\n\n" +
+  'Recebemos sua reserva do presente: "{item}".\n\n' +
+  "Você pode escolher a melhor forma de presentear:\n" +
+  "1) Comprar o item por conta própria e entregar aos noivos.\n" +
+  "2) Enviar o valor via PIX.\n\n" +
+  "Se preferir PIX, mando a chave na próxima mensagem para facilitar copiar e colar.";
+const DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE =
+  "Chave PIX (copiar e colar):\n{pixKey}\nTitular: {pixName}";
 
 /** Corpo aceite pelo Prisma para PurchasedItem (evita campos extra e formatos que rebentam o processo → 502 no Nginx). */
 function parsePurchasedPayload(body: Record<string, unknown>) {
@@ -101,6 +110,10 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const whaticketQueueId = String(body.whaticketQueueId ?? "").trim();
   const whaticketTemplateRaw = String(body.whaticketTemplate ?? DEFAULT_WHATSAPP_RESERVATION_TEMPLATE).trim();
   const whaticketTemplate = whaticketTemplateRaw || DEFAULT_WHATSAPP_RESERVATION_TEMPLATE;
+  const guestReplyTemplateRaw = String(body.guestReplyTemplate ?? DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE).trim();
+  const guestReplyTemplate = guestReplyTemplateRaw || DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE;
+  const guestPixTemplateRaw = String(body.guestPixTemplate ?? DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE).trim();
+  const guestPixTemplate = guestPixTemplateRaw || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE;
   const whaticketSign = Boolean(body.whaticketSign ?? true);
   const whaticketClose = Boolean(body.whaticketClose ?? false);
   return {
@@ -114,6 +127,8 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     whaticketUserId,
     whaticketQueueId,
     whaticketTemplate,
+    guestReplyTemplate,
+    guestPixTemplate,
     whaticketSign,
     whaticketClose,
   };
@@ -142,6 +157,8 @@ async function sendReservationToWhaticket(
     whaticketUserId: string;
     whaticketQueueId: string;
     whaticketTemplate: string;
+    guestReplyTemplate: string;
+    guestPixTemplate: string;
     whaticketSign: boolean;
     whaticketClose: boolean;
     pixKey: string;
@@ -150,15 +167,15 @@ async function sendReservationToWhaticket(
   },
   payload: { itemNome: string; convidado: string; whatsapp: string; mensagem?: string }
 ) {
-  const number = (settings.whatsappNumber || "").replace(/\D/g, "");
+  const ownerNumber = (settings.whatsappNumber || "").replace(/\D/g, "");
   const token = settings.whaticketToken?.trim();
-  if (!number || !token) return;
+  if (!ownerNumber || !token) return;
 
   const template = settings.whaticketTemplate?.trim() || DEFAULT_WHATSAPP_RESERVATION_TEMPLATE;
   const pixKey = (settings.pixKey || "").trim() || "(cadastre a chave PIX no painel do site)";
   const pixName = (settings.pixName || "").trim() || "(cadastre o titular no painel)";
   const couple = (settings.coupleNames || "").trim() || "o casal";
-  const msg = template
+  const ownerMsg = template
     .replace(/\{item\}/gi, payload.itemNome)
     .replace(/\{nome\}/gi, payload.convidado)
     .replace(/\{whatsapp\}/gi, payload.whatsapp)
@@ -167,26 +184,94 @@ async function sendReservationToWhaticket(
     .replace(/\{pixName\}/gi, pixName)
     .replace(/\{couple\}/gi, couple);
 
-  const body = {
-    number,
-    body: msg,
+  const ownerBody = {
+    number: ownerNumber,
+    body: ownerMsg,
     ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
     sendSignature: settings.whaticketSign,
     closeTicket: settings.whaticketClose,
   };
 
-  const resp = await fetch(settings.whaticketApiUrl, {
+  const ownerResp = await fetch(settings.whaticketApiUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(ownerBody),
   });
 
-  if (!resp.ok) {
-    const out = await resp.text();
-    throw new Error(`Whaticket falhou (${resp.status}): ${out}`);
+  if (!ownerResp.ok) {
+    const out = await ownerResp.text();
+    throw new Error(`Whaticket falhou (${ownerResp.status}): ${out}`);
+  }
+
+  // Mensagem de retorno para o convidado que reservou.
+  const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
+  const guestNumber =
+    guestRaw.length === 11 || guestRaw.length === 10
+      ? `55${guestRaw}`
+      : guestRaw;
+
+  if (guestNumber) {
+    const guestBodyText =
+      (settings.guestReplyTemplate?.trim() || DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE)
+        .replace(/\{item\}/gi, payload.itemNome)
+        .replace(/\{nome\}/gi, payload.convidado)
+        .replace(/\{whatsapp\}/gi, payload.whatsapp)
+        .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+        .replace(/\{pixKey\}/gi, pixKey)
+        .replace(/\{pixName\}/gi, pixName)
+        .replace(/\{couple\}/gi, couple);
+
+    const guestBody = {
+      number: guestNumber,
+      body: guestBodyText,
+      ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+      sendSignature: settings.whaticketSign,
+      closeTicket: false,
+    };
+
+    const guestResp = await fetch(settings.whaticketApiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(guestBody),
+    });
+    if (!guestResp.ok) {
+      const out = await guestResp.text();
+      throw new Error(`Whaticket convidado falhou (${guestResp.status}): ${out}`);
+    }
+
+    const guestPixBody = {
+      number: guestNumber,
+      body: (settings.guestPixTemplate?.trim() || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE)
+        .replace(/\{item\}/gi, payload.itemNome)
+        .replace(/\{nome\}/gi, payload.convidado)
+        .replace(/\{whatsapp\}/gi, payload.whatsapp)
+        .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+        .replace(/\{pixKey\}/gi, pixKey)
+        .replace(/\{pixName\}/gi, pixName)
+        .replace(/\{couple\}/gi, couple),
+      ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+      sendSignature: settings.whaticketSign,
+      closeTicket: settings.whaticketClose,
+    };
+
+    const guestPixResp = await fetch(settings.whaticketApiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(guestPixBody),
+    });
+    if (!guestPixResp.ok) {
+      const out = await guestPixResp.text();
+      throw new Error(`Whaticket PIX convidado falhou (${guestPixResp.status}): ${out}`);
+    }
   }
 }
 
@@ -564,6 +649,8 @@ app.post("/api/reservations", async (req, res) => {
             whaticketUserId: settings.whaticketUserId,
             whaticketQueueId: settings.whaticketQueueId,
             whaticketTemplate: settings.whaticketTemplate,
+            guestReplyTemplate: settings.guestReplyTemplate,
+            guestPixTemplate: settings.guestPixTemplate,
             whaticketSign: settings.whaticketSign,
             whaticketClose: settings.whaticketClose,
             pixKey: settings.pixKey,
@@ -759,6 +846,8 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             whaticketUserId: String(settings.whaticketUserId ?? ""),
             whaticketQueueId: String(settings.whaticketQueueId ?? ""),
             whaticketTemplate: String(settings.whaticketTemplate ?? ""),
+            guestReplyTemplate: String(settings.guestReplyTemplate ?? DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE),
+            guestPixTemplate: String(settings.guestPixTemplate ?? DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE),
             whaticketSign: Boolean(settings.whaticketSign ?? true),
             whaticketClose: Boolean(settings.whaticketClose ?? false),
           },

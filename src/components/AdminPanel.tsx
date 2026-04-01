@@ -30,6 +30,17 @@ export default function AdminPanel() {
     'Opções de presente: podem comprar o item por conta própria e entregar aos noivos, ou enviar o valor via PIX:\n' +
     'Chave PIX: {pixKey}\n' +
     'Titular: {pixName}';
+  const defaultGuestReplyTemplate =
+    'Oi, {nome}! Obrigado pelo carinho com {couple}. 💛\n\n' +
+    'Recebemos sua reserva do presente: "{item}".\n\n' +
+    'Você pode escolher a melhor forma de presentear:\n' +
+    '1) Comprar o item por conta própria e entregar aos noivos.\n' +
+    '2) Enviar o valor via PIX.\n\n' +
+    'Se preferir PIX, mando a chave na próxima mensagem para facilitar copiar e colar.';
+  const defaultGuestPixTemplate =
+    'Chave PIX (copiar e colar):\n' +
+    '{pixKey}\n' +
+    'Titular: {pixName}';
 
   const [pixSettings, setPixSettings] = useState<SettingsData>({
     pixKey: '',
@@ -38,6 +49,8 @@ export default function AdminPanel() {
     weddingDate: '2027-02-02',
     whaticketApiUrl: 'https://api.whaticketup.com.br/api/messages/send',
     whaticketTemplate: defaultReservationTemplate,
+    guestReplyTemplate: defaultGuestReplyTemplate,
+    guestPixTemplate: defaultGuestPixTemplate,
   });
 
   // Login states
@@ -605,6 +618,20 @@ export default function AdminPanel() {
                     <textarea rows={8} value={pixSettings.whaticketTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })} placeholder={defaultReservationTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
                     <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
                       Variáveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem automática para o convidado</label>
+                    <textarea rows={8} value={pixSettings.guestReplyTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, guestReplyTemplate: e.target.value })} placeholder={defaultGuestReplyTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
+                      Variáveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem separada da chave PIX (copiar e colar)</label>
+                    <textarea rows={4} value={pixSettings.guestPixTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, guestPixTemplate: e.target.value })} placeholder={defaultGuestPixTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
+                      Dica: deixe só a chave e o titular para facilitar o copiar/colar no WhatsApp.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
