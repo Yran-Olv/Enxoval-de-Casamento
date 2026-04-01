@@ -9,6 +9,4 @@ Você pode escolher a melhor forma de presentear:
 2) Enviar o valor via PIX.
 
 Se preferir PIX, mando a chave na próxima mensagem para facilitar copiar e colar.',
-ADD COLUMN "guestPixTemplate" TEXT NOT NULL DEFAULT 'Chave PIX (copiar e colar):
-{pixKey}
-Titular: {pixName}';
+ADD COLUMN "guestPixTemplate" TEXT NOT NULL DEFAULT '{pixKey}';

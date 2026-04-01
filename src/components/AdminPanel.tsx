@@ -38,9 +38,7 @@ export default function AdminPanel() {
     '2) Enviar o valor via PIX.\n\n' +
     'Se preferir PIX, mando a chave na próxima mensagem para facilitar copiar e colar.';
   const defaultGuestPixTemplate =
-    'Chave PIX (copiar e colar):\n' +
-    '{pixKey}\n' +
-    'Titular: {pixName}';
+    '{pixKey}';
 
   const [pixSettings, setPixSettings] = useState<SettingsData>({
     pixKey: '',

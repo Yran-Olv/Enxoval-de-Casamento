@@ -64,8 +64,7 @@ const DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE =
   "1) Comprar o item por conta própria e entregar aos noivos.\n" +
   "2) Enviar o valor via PIX.\n\n" +
   "Se preferir PIX, mando a chave na próxima mensagem para facilitar copiar e colar.";
-const DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE =
-  "Chave PIX (copiar e colar):\n{pixKey}\nTitular: {pixName}";
+const DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE = "{pixKey}";
 
 /** Corpo aceite pelo Prisma para PurchasedItem (evita campos extra e formatos que rebentam o processo → 502 no Nginx). */
 function parsePurchasedPayload(body: Record<string, unknown>) {
@@ -272,6 +271,29 @@ async function sendReservationToWhaticket(
       const out = await guestPixResp.text();
       throw new Error(`Whaticket PIX convidado falhou (${guestPixResp.status}): ${out}`);
     }
+
+    if (pixName && pixName !== "(cadastre o titular no painel)") {
+      const guestPixOwnerBody = {
+        number: guestNumber,
+        body: `Titular PIX: ${pixName}`,
+        ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+        sendSignature: settings.whaticketSign,
+        closeTicket: settings.whaticketClose,
+      };
+
+      const guestPixOwnerResp = await fetch(settings.whaticketApiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(guestPixOwnerBody),
+      });
+      if (!guestPixOwnerResp.ok) {
+        const out = await guestPixOwnerResp.text();
+        throw new Error(`Whaticket titular PIX convidado falhou (${guestPixOwnerResp.status}): ${out}`);
+      }
+    }
   }
 }
 
@@ -284,12 +306,18 @@ async function sendPixDonationToWhaticket(
     whaticketQueueId: string;
     whaticketSign: boolean;
     whaticketClose: boolean;
+    coupleNames: string;
+    pixKey: string;
+    pixName: string;
   },
   payload: { nome: string; whatsapp: string; valor?: number; mensagem?: string }
 ) {
-  const number = (settings.whatsappNumber || "").replace(/\D/g, "");
+  const ownerNumber = (settings.whatsappNumber || "").replace(/\D/g, "");
   const token = settings.whaticketToken?.trim();
-  if (!number || !token) return;
+  if (!ownerNumber || !token) return;
+  const couple = (settings.coupleNames || "").trim() || "o casal";
+  const pixKey = (settings.pixKey || "").trim() || "(cadastre a chave PIX no painel do site)";
+  const pixName = (settings.pixName || "").trim() || "(cadastre o titular no painel)";
 
   const valorFmt =
     typeof payload.valor === "number" && Number.isFinite(payload.valor)
@@ -303,7 +331,7 @@ async function sendPixDonationToWhaticket(
     `Mensagem: ${payload.mensagem?.trim() || "(sem mensagem)"}`;
 
   const body = {
-    number,
+    number: ownerNumber,
     body: bodyText,
     ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
     sendSignature: settings.whaticketSign,
@@ -322,6 +350,86 @@ async function sendPixDonationToWhaticket(
   if (!resp.ok) {
     const out = await resp.text();
     throw new Error(`Whaticket falhou (${resp.status}): ${out}`);
+  }
+
+  // Confirmação para quem avisou o PIX.
+  const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
+  const guestNumber =
+    guestRaw.length === 11 || guestRaw.length === 10
+      ? `55${guestRaw}`
+      : guestRaw;
+
+  if (guestNumber) {
+    const thankYouText =
+      `Oi, ${payload.nome}! Muito obrigado pelo carinho com ${couple}. 💛\n\n` +
+      `Recebemos seu aviso de doação via PIX${valorFmt !== "Não informado" ? ` no valor de ${valorFmt}` : ""}.\n` +
+      `Isso ajuda muito na construção do nosso novo lar.\n\n` +
+      `Se você preferir, também pode comprar um item por conta própria e entregar aos noivos.`;
+
+    const thankYouBody = {
+      number: guestNumber,
+      body: thankYouText,
+      ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+      sendSignature: settings.whaticketSign,
+      closeTicket: false,
+    };
+
+    const thankYouResp = await fetch(settings.whaticketApiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(thankYouBody),
+    });
+    if (!thankYouResp.ok) {
+      const out = await thankYouResp.text();
+      throw new Error(`Whaticket agradecimento PIX falhou (${thankYouResp.status}): ${out}`);
+    }
+
+    const pixBody = {
+      number: guestNumber,
+      body: pixKey,
+      ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+      sendSignature: settings.whaticketSign,
+      closeTicket: settings.whaticketClose,
+    };
+
+    const pixResp = await fetch(settings.whaticketApiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(pixBody),
+    });
+    if (!pixResp.ok) {
+      const out = await pixResp.text();
+      throw new Error(`Whaticket chave PIX falhou (${pixResp.status}): ${out}`);
+    }
+
+    if (pixName && pixName !== "(cadastre o titular no painel)") {
+      const pixOwnerBody = {
+        number: guestNumber,
+        body: `Titular PIX: ${pixName}`,
+        ...buildWhaticketOptionalIds(settings.whaticketUserId, settings.whaticketQueueId),
+        sendSignature: settings.whaticketSign,
+        closeTicket: settings.whaticketClose,
+      };
+
+      const pixOwnerResp = await fetch(settings.whaticketApiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(pixOwnerBody),
+      });
+      if (!pixOwnerResp.ok) {
+        const out = await pixOwnerResp.text();
+        throw new Error(`Whaticket titular PIX falhou (${pixOwnerResp.status}): ${out}`);
+      }
+    }
   }
 }
 
@@ -711,6 +819,9 @@ app.post("/api/pix-donations", async (req, res) => {
           whaticketQueueId: settings.whaticketQueueId,
           whaticketSign: settings.whaticketSign,
           whaticketClose: settings.whaticketClose,
+          coupleNames: settings.coupleNames,
+          pixKey: settings.pixKey,
+          pixName: settings.pixName,
         },
         { nome, whatsapp, valor, mensagem }
       );
