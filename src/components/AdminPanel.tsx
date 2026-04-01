@@ -277,17 +277,25 @@ export default function AdminPanel() {
 
   const handleExportBackup = async () => {
     try {
-      const backup = await api.get('/backup/export');
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' });
+      const { backup, savedPath, filename } = await api.getBackupExport();
+      const body = JSON.stringify(backup, null, 2);
+      const blob = new Blob([body], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `enxoval-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      a.download =
+        filename?.replace(/[/\\]/g, '') ||
+        `enxoval-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      showNotice('success', 'Backup exportado com sucesso.');
+      showNotice(
+        'success',
+        savedPath
+          ? `Download iniciado. Cópia também salva no servidor em ${savedPath}.`
+          : 'Download iniciado. (Cópia em pasta backups/ indisponível neste ambiente.)'
+      );
     } catch (error: any) {
       showNotice('error', error?.message || 'Falha ao exportar backup.');
     }
@@ -615,7 +623,7 @@ export default function AdminPanel() {
                   <div className="p-6 rounded-2xl border border-gold/10 bg-white/40">
                     <h4 className="text-2xl font-serif mb-2">Exportar Backup</h4>
                     <p className="text-sm opacity-70 mb-4">
-                      Baixa um arquivo JSON com itens do enxoval, reservas, itens comprados, configurações e usuários.
+                      Baixa um arquivo JSON no seu computador e grava uma cópia na pasta <code className="text-xs bg-black/5 px-1 rounded">backups/</code> do projeto no servidor (Docker: volume mapeado no host).
                     </p>
                     <button
                       type="button"

@@ -37,6 +37,20 @@ export const api = {
     const res = await fetch(`${API_URL}${path}`, fetchOpts);
     return parseResponse(res);
   },
+
+  /** Exportação de backup: devolve JSON e, se o servidor gravou cópia, o caminho relativo (ex.: backups/…json). */
+  getBackupExport: async (): Promise<{ backup: unknown; savedPath: string | null; filename: string | null }> => {
+    const res = await fetch(`${API_URL}/backup/export`, fetchOpts);
+    if (!res.ok) throw new Error(await readErrorMessage(res));
+    const savedPath = res.headers.get("X-Backup-Saved-Path");
+    const filename = res.headers.get("X-Backup-Filename");
+    const backup = await res.json();
+    return {
+      backup,
+      savedPath: savedPath?.trim() || null,
+      filename: filename?.trim() || null,
+    };
+  },
   post: async (path: string, data: any) => {
     const res = await fetch(`${API_URL}${path}`, {
       method: "POST",

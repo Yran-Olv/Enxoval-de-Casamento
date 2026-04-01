@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { mkdir, writeFile } from "fs/promises";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -39,10 +40,13 @@ const authCookie = {
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    exposedHeaders: ["X-Backup-Saved-Path", "X-Backup-Filename"],
+  })
+);
 
 const DEFAULT_WHATSAPP_RESERVATION_TEMPLATE =
   "🎁 Nova reserva no site ({couple})\n\n" +
@@ -697,8 +701,22 @@ app.get("/api/backup/export", authenticate, async (req, res) => {
     };
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `enxoval-backup-${stamp}.json`;
+    const backupsDir = path.join(process.cwd(), "backups");
+    const absolutePath = path.join(backupsDir, filename);
+    const relativeForClient = path.posix.join("backups", filename);
+
+    try {
+      await mkdir(backupsDir, { recursive: true });
+      await writeFile(absolutePath, `${JSON.stringify(backup, null, 2)}\n`, "utf8");
+      res.setHeader("X-Backup-Saved-Path", relativeForClient);
+    } catch (diskErr) {
+      console.error("Backup: não foi possível gravar em backups/: ", diskErr);
+    }
+
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="enxoval-backup-${stamp}.json"`);
+    res.setHeader("X-Backup-Filename", filename);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.status(200).json(backup);
   } catch (err) {
     console.error("GET /api/backup/export:", err);

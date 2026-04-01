@@ -44,6 +44,9 @@ services:
       # 🔥 ESSENCIAL (corrige erro do Prisma)
       DATABASE_URL: "postgresql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}?schema=public"
 
+    volumes:
+      - ./backups:/app/backups
+
     depends_on:
       db:
         condition: service_healthy
