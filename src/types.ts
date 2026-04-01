@@ -30,6 +30,7 @@ export interface SettingsData {
   id?: string;
   pixKey: string;
   pixName: string;
+  coupleNames?: string;
   weddingDate: string;
   whatsappNumber?: string;
   whaticketApiUrl?: string;

@@ -29,6 +29,7 @@ export default function App() {
   const [settings, setSettings] = useState<SettingsData>({
     pixKey: '',
     pixName: '',
+    coupleNames: 'Tais & Yran',
     weddingDate: '2027-02-02',
   });
 
@@ -53,6 +54,7 @@ export default function App() {
           setSettings({
             pixKey: data.pixKey ?? '',
             pixName: data.pixName ?? '',
+            coupleNames: data.coupleNames ?? 'Tais & Yran',
             weddingDate: data.weddingDate,
           });
         }
@@ -90,7 +92,12 @@ export default function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <Hero onNavigate={navigate} weddingDate={settings.weddingDate} weddingDateLabel={weddingDateLabel} />
+              <Hero
+                onNavigate={navigate}
+                weddingDate={settings.weddingDate}
+                weddingDateLabel={weddingDateLabel}
+                coupleNames={settings.coupleNames ?? 'Tais & Yran'}
+              />
             </motion.div>
           )}
 
@@ -135,7 +142,7 @@ export default function App() {
       {/* Footer */}
       <footer className="py-20 px-6 border-t border-gold/10 text-center">
         <div className="max-w-7xl mx-auto">
-          <h2 className="text-4xl font-serif mb-6">Tais & Yran</h2>
+          <h2 className="text-4xl font-serif mb-6">{settings.coupleNames ?? 'Tais & Yran'}</h2>
           <p className="text-xs uppercase tracking-[0.4em] opacity-40 mb-10">{weddingDateLabel}</p>
           <div className="flex justify-center gap-6 mb-12">
             <div className="w-10 h-10 rounded-full border border-gold/20 flex items-center justify-center text-gold hover:bg-gold hover:text-white transition-all cursor-pointer">

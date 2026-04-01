@@ -5,9 +5,10 @@ interface HeroProps {
   onNavigate: (page: 'home' | 'purchased' | 'registry' | 'admin') => void;
   weddingDate: string;
   weddingDateLabel: string;
+  coupleNames: string;
 }
 
-export default function Hero({ onNavigate, weddingDate, weddingDateLabel }: HeroProps) {
+export default function Hero({ onNavigate, weddingDate, weddingDateLabel, coupleNames }: HeroProps) {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-20 overflow-hidden">
       {/* Background elements */}
@@ -23,7 +24,7 @@ export default function Hero({ onNavigate, weddingDate, weddingDateLabel }: Hero
         className="text-center max-w-3xl"
       >
         <span className="text-xs uppercase tracking-[0.3em] text-gold mb-6 block">Nosso Grande Dia</span>
-        <h1 className="text-6xl md:text-9xl font-serif mb-8 leading-tight">Tais & Yran</h1>
+        <h1 className="text-6xl md:text-9xl font-serif mb-8 leading-tight">{coupleNames}</h1>
         <p className="text-lg md:text-xl font-serif italic opacity-70 mb-12 max-w-xl mx-auto leading-relaxed">
           "O amor não consiste em olhar um para o outro, mas em olhar juntos na mesma direção."
         </p>

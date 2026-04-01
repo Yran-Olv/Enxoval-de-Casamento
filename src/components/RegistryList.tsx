@@ -2,7 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { EnxovalItem } from '../types';
-import { Gift, CheckCircle2, Clock, Send, X, Copy, Check, HeartHandshake } from 'lucide-react';
+import { Gift, CheckCircle2, Clock, Send, X, Copy, Check, HeartHandshake, MessageCircle } from 'lucide-react';
+
+function buildGuestShareMessage(opts: {
+  couple: string;
+  itemNome: string;
+  guestNome: string;
+  mensagem: string;
+  pixKey: string;
+  pixName: string;
+}) {
+  const pixBlock = opts.pixKey.trim()
+    ? `Chave PIX: ${opts.pixKey.trim()}\nTitular: ${opts.pixName.trim() || '—'}`
+    : 'A chave PIX está na página do enxoval no site.';
+  const recado = opts.mensagem.trim() ? `\n\nRecado: ${opts.mensagem.trim()}` : '';
+  return (
+    `Olá ${opts.couple}! Reservei no site o presente "${opts.itemNome}".\n\n` +
+    `Vocês podem comprar o item por conta própria e entregar direto, ou receber o valor via PIX:\n${pixBlock}` +
+    recado +
+    `\n\nAbraço,\n${opts.guestNome.trim() || '—'}`
+  );
+}
 
 export default function RegistryList() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -13,7 +33,9 @@ export default function RegistryList() {
   const [pixDonationForm, setPixDonationForm] = useState({ nome: '', whatsapp: '', valor: '', mensagem: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPixSubmitting, setIsPixSubmitting] = useState(false);
-  const [pixSettings, setPixSettings] = useState({ pixKey: '', pixName: '' });
+  const [siteSettings, setSiteSettings] = useState({ pixKey: '', pixName: '', coupleNames: 'Tais & Yran' });
+  const [reserveModalPhase, setReserveModalPhase] = useState<'form' | 'success'>('form');
+  const [guestShareText, setGuestShareText] = useState('');
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
@@ -34,13 +56,24 @@ export default function RegistryList() {
         api.get('/settings')
       ]);
       setItems(reg);
-      setPixSettings(set);
+      setSiteSettings({
+        pixKey: set.pixKey ?? '',
+        pixName: set.pixName ?? '',
+        coupleNames: set.coupleNames ?? 'Tais & Yran',
+      });
     } catch (err) {
       console.error("Error fetching data:", err);
       showNotice('error', 'Não foi possível carregar o enxoval agora.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const closeReserveModal = () => {
+    setSelectedItem(null);
+    setReserveModalPhase('form');
+    setGuestShareText('');
+    setReservationForm({ nome: '', whatsapp: '', mensagem: '' });
   };
 
   const handleReserve = async (e: React.FormEvent) => {
@@ -56,12 +89,20 @@ export default function RegistryList() {
         mensagem: reservationForm.mensagem
       });
 
-      const message = encodeURIComponent(`Olá Tais & Yran! Reservei o presente "${selectedItem.nome}" para vocês! ${reservationForm.mensagem ? `\nMinha mensagem: ${reservationForm.mensagem}` : ''}`);
-      window.open(`https://wa.me/?text=${message}`, '_blank');
-
-      setSelectedItem(null);
-      setReservationForm({ nome: '', whatsapp: '', mensagem: '' });
-      showNotice('success', 'Reserva registrada com sucesso.');
+      const share = buildGuestShareMessage({
+        couple: siteSettings.coupleNames,
+        itemNome: selectedItem.nome,
+        guestNome: reservationForm.nome,
+        mensagem: reservationForm.mensagem,
+        pixKey: siteSettings.pixKey,
+        pixName: siteSettings.pixName,
+      });
+      setGuestShareText(share);
+      setReserveModalPhase('success');
+      showNotice(
+        'success',
+        'Reserva confirmada. Os noivos recebem um aviso automático com as opções de presente e a chave PIX.'
+      );
       fetchData();
     } catch (error) {
       showNotice('error', error instanceof Error ? error.message : 'Erro ao realizar reserva.');
@@ -73,8 +114,8 @@ export default function RegistryList() {
   const progress = items.length > 0 ? (items.filter(i => i.status === 'Comprado').length / items.length) * 100 : 0;
 
   const handleCopyPix = () => {
-    if (pixSettings.pixKey) {
-      navigator.clipboard.writeText(pixSettings.pixKey);
+    if (siteSettings.pixKey) {
+      navigator.clipboard.writeText(siteSettings.pixKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -164,7 +205,7 @@ export default function RegistryList() {
       </motion.div>
 
       {/* PIX Section */}
-      {pixSettings.pixKey && (
+      {siteSettings.pixKey && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -182,7 +223,7 @@ export default function RegistryList() {
             <div className="bg-white/50 border border-gold/10 rounded-3xl p-6 md:p-8 inline-block w-full">
               <span className="text-[10px] uppercase tracking-widest font-bold opacity-40 block mb-2">Chave PIX</span>
               <div className="flex flex-col md:flex-row items-center justify-center gap-4">
-                <code className="text-lg md:text-xl font-mono text-gold break-all">{pixSettings.pixKey}</code>
+                <code className="text-lg md:text-xl font-mono text-gold break-all">{siteSettings.pixKey}</code>
                 <button 
                   onClick={handleCopyPix}
                   className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] uppercase tracking-widest font-bold transition-all ${
@@ -193,9 +234,9 @@ export default function RegistryList() {
                   {copied ? 'Copiado!' : 'Copiar Chave'}
                 </button>
               </div>
-              {pixSettings.pixName && (
+              {siteSettings.pixName && (
                 <p className="mt-4 text-[10px] uppercase tracking-widest font-bold opacity-40">
-                  Titular: {pixSettings.pixName}
+                  Titular: {siteSettings.pixName}
                 </p>
               )}
               <div className="mt-6">
@@ -264,7 +305,11 @@ export default function RegistryList() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setSelectedItem(item)}
+                  onClick={() => {
+                    setReserveModalPhase('form');
+                    setGuestShareText('');
+                    setSelectedItem(item);
+                  }}
                   className="w-full py-4 bg-gold text-white rounded-2xl text-xs uppercase tracking-widest font-bold shadow-lg shadow-gold/20"
                 >
                   Quero Presentear
@@ -294,7 +339,7 @@ export default function RegistryList() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedItem(null)}
+              onClick={closeReserveModal}
               className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -304,80 +349,125 @@ export default function RegistryList() {
               className="relative w-full max-w-lg bg-beige p-8 md:p-12 rounded-[40px] shadow-2xl border border-gold/20"
             >
               <button 
-                onClick={() => setSelectedItem(null)}
+                type="button"
+                onClick={closeReserveModal}
                 className="absolute top-8 right-8 text-gold/40 hover:text-gold transition-colors"
               >
                 <X size={24} />
               </button>
 
-              <div className="text-center mb-10">
-                <div className="w-16 h-16 bg-gold/10 text-gold rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Gift size={32} />
-                </div>
-                <h3 className="text-4xl font-serif mb-2">Reservar Presente</h3>
-                <p className="text-sm opacity-60 italic">Você escolheu: <span className="text-gold font-bold not-italic">{selectedItem.nome}</span></p>
-              </div>
-
-              <form onSubmit={handleReserve} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu Nome</label>
-                  <div className="relative">
-                    <input 
-                      required
-                      type="text"
-                      value={reservationForm.nome}
-                      onChange={e => setReservationForm({...reservationForm, nome: e.target.value})}
-                      placeholder="Ex: Maria Silva"
-                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
-                    />
+              {reserveModalPhase === 'success' ? (
+                <div className="text-center space-y-6 pt-2">
+                  <div className="w-16 h-16 bg-green-500/15 text-green-700 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-serif mb-2">Reserva confirmada</h3>
+                    <p className="text-sm opacity-70 leading-relaxed">
+                      Os noivos recebem um aviso automático com os dados da reserva, as formas de presentear (comprar o item ou PIX) e a chave PIX cadastrada no site.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(guestShareText);
+                        showNotice('success', 'Mensagem copiada. Cole no WhatsApp se quiser avisar também.');
+                      }}
+                      className="w-full py-4 border-2 border-gold/30 text-ink rounded-2xl text-xs uppercase tracking-widest font-bold flex items-center justify-center gap-2 hover:bg-gold/5 transition-colors"
+                    >
+                      <Copy size={16} /> Copiar mensagem (opcional)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.open(`https://wa.me/?text=${encodeURIComponent(guestShareText)}`, '_blank');
+                      }}
+                      className="w-full py-4 bg-gold text-white rounded-2xl text-xs uppercase tracking-widest font-bold flex items-center justify-center gap-2 shadow-lg shadow-gold/20"
+                    >
+                      <MessageCircle size={18} /> Abrir WhatsApp com essa mensagem
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeReserveModal}
+                      className="w-full py-3 text-[10px] uppercase tracking-widest font-bold opacity-50 hover:opacity-80"
+                    >
+                      Fechar
+                    </button>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu WhatsApp</label>
-                  <div className="relative">
-                    <input 
-                      required
-                      type="tel"
-                      value={reservationForm.whatsapp}
-                      onChange={e => setReservationForm({...reservationForm, whatsapp: e.target.value})}
-                      placeholder="Ex: (11) 99999-9999"
-                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
-                    />
+              ) : (
+                <>
+                  <div className="text-center mb-10">
+                    <div className="w-16 h-16 bg-gold/10 text-gold rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Gift size={32} />
+                    </div>
+                    <h3 className="text-4xl font-serif mb-2">Reservar presente</h3>
+                    <p className="text-sm opacity-60 italic">Você escolheu: <span className="text-gold font-bold not-italic">{selectedItem.nome}</span></p>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem (Opcional)</label>
-                  <div className="relative">
-                    <textarea 
-                      value={reservationForm.mensagem}
-                      onChange={e => setReservationForm({...reservationForm, mensagem: e.target.value})}
-                      placeholder="Deixe um recado carinhoso..."
-                      rows={3}
-                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm resize-none"
-                    />
-                  </div>
-                </div>
+                  <form onSubmit={handleReserve} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu nome</label>
+                      <div className="relative">
+                        <input 
+                          required
+                          type="text"
+                          value={reservationForm.nome}
+                          onChange={e => setReservationForm({...reservationForm, nome: e.target.value})}
+                          placeholder="Ex: Maria Silva"
+                          className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
+                        />
+                      </div>
+                    </div>
 
-                <div className="pt-4">
-                  <button
-                    disabled={isSubmitting}
-                    type="submit"
-                    className="w-full py-5 bg-gold text-white rounded-2xl text-sm uppercase tracking-widest font-bold shadow-xl shadow-gold/20 flex items-center justify-center gap-3 disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Processando...' : (
-                      <>
-                        <Send size={18} /> Confirmar e Avisar no WhatsApp
-                      </>
-                    )}
-                  </button>
-                </div>
-                
-                <p className="text-[10px] text-center opacity-40 px-6">
-                  Ao confirmar, o item será reservado em seu nome. Por favor, entre em contato conosco para combinar a entrega.
-                </p>
-              </form>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Seu WhatsApp</label>
+                      <div className="relative">
+                        <input 
+                          required
+                          type="tel"
+                          value={reservationForm.whatsapp}
+                          onChange={e => setReservationForm({...reservationForm, whatsapp: e.target.value})}
+                          placeholder="Ex: (11) 99999-9999"
+                          className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem (opcional)</label>
+                      <div className="relative">
+                        <textarea 
+                          value={reservationForm.mensagem}
+                          onChange={e => setReservationForm({...reservationForm, mensagem: e.target.value})}
+                          placeholder="Deixe um recado carinhoso..."
+                          rows={3}
+                          className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:outline-none focus:border-gold transition-all text-sm resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      <button
+                        disabled={isSubmitting}
+                        type="submit"
+                        className="w-full py-5 bg-gold text-white rounded-2xl text-sm uppercase tracking-widest font-bold shadow-xl shadow-gold/20 flex items-center justify-center gap-3 disabled:opacity-50"
+                      >
+                        {isSubmitting ? 'Processando...' : (
+                          <>
+                            <Send size={18} /> Confirmar reserva
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    
+                    <p className="text-[10px] text-center opacity-40 px-6 leading-relaxed">
+                      O item fica reservado em seu nome. Os noivos recebem um aviso automático (com PIX e opções de presente). Você não precisa abrir o WhatsApp — só se quiser avisar por conta própria.
+                    </p>
+                  </form>
+                </>
+              )}
             </motion.div>
           </div>
         )}

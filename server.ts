@@ -44,6 +44,16 @@ app.use(cors({
   credentials: true
 }));
 
+const DEFAULT_WHATSAPP_RESERVATION_TEMPLATE =
+  "🎁 Nova reserva no site ({couple})\n\n" +
+  "Presente: {item}\n" +
+  "Convidado(a): {nome}\n" +
+  "WhatsApp: {whatsapp}\n" +
+  "Recado: {mensagem}\n\n" +
+  "Opções de presente: podem comprar o item por conta própria e entregar aos noivos, ou enviar o valor via PIX:\n" +
+  "Chave PIX: {pixKey}\n" +
+  "Titular: {pixName}";
+
 /** Corpo aceite pelo Prisma para PurchasedItem (evita campos extra e formatos que rebentam o processo → 502 no Nginx). */
 function parsePurchasedPayload(body: Record<string, unknown>) {
   const nome = String(body.nome ?? "").trim();
@@ -75,6 +85,8 @@ function parsePurchasedPayload(body: Record<string, unknown>) {
 function parseSettingsPayload(body: Record<string, unknown>) {
   const pixKey = String(body.pixKey ?? "").trim();
   const pixName = String(body.pixName ?? "").trim();
+  const coupleNamesRaw = String(body.coupleNames ?? "").trim();
+  const coupleNames = coupleNamesRaw || "Tais & Yran";
   const weddingDateRaw = String(body.weddingDate ?? "").trim();
   const weddingDate = /^\d{4}-\d{2}-\d{2}$/.test(weddingDateRaw) ? weddingDateRaw : "2027-02-02";
   const whatsappNumber = String(body.whatsappNumber ?? "").replace(/\D/g, "");
@@ -83,15 +95,14 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const whaticketToken = String(body.whaticketToken ?? "").trim();
   const whaticketUserId = String(body.whaticketUserId ?? "").trim();
   const whaticketQueueId = String(body.whaticketQueueId ?? "").trim();
-  const whaticketTemplate = String(
-    body.whaticketTemplate ??
-      "Nova reserva no site.\nItem: {item}\nConvidado: {nome}\nWhatsApp: {whatsapp}\nMensagem: {mensagem}"
-  ).trim();
+  const whaticketTemplateRaw = String(body.whaticketTemplate ?? DEFAULT_WHATSAPP_RESERVATION_TEMPLATE).trim();
+  const whaticketTemplate = whaticketTemplateRaw || DEFAULT_WHATSAPP_RESERVATION_TEMPLATE;
   const whaticketSign = Boolean(body.whaticketSign ?? true);
   const whaticketClose = Boolean(body.whaticketClose ?? false);
   return {
     pixKey,
     pixName,
+    coupleNames,
     weddingDate,
     whatsappNumber,
     whaticketApiUrl,
@@ -129,6 +140,9 @@ async function sendReservationToWhaticket(
     whaticketTemplate: string;
     whaticketSign: boolean;
     whaticketClose: boolean;
+    pixKey: string;
+    pixName: string;
+    coupleNames: string;
   },
   payload: { itemNome: string; convidado: string; whatsapp: string; mensagem?: string }
 ) {
@@ -136,13 +150,18 @@ async function sendReservationToWhaticket(
   const token = settings.whaticketToken?.trim();
   if (!number || !token) return;
 
-  const template = settings.whaticketTemplate?.trim() ||
-    "Nova reserva no site.\nItem: {item}\nConvidado: {nome}\nWhatsApp: {whatsapp}\nMensagem: {mensagem}";
+  const template = settings.whaticketTemplate?.trim() || DEFAULT_WHATSAPP_RESERVATION_TEMPLATE;
+  const pixKey = (settings.pixKey || "").trim() || "(cadastre a chave PIX no painel do site)";
+  const pixName = (settings.pixName || "").trim() || "(cadastre o titular no painel)";
+  const couple = (settings.coupleNames || "").trim() || "o casal";
   const msg = template
     .replace(/\{item\}/gi, payload.itemNome)
     .replace(/\{nome\}/gi, payload.convidado)
     .replace(/\{whatsapp\}/gi, payload.whatsapp)
-    .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem mensagem)");
+    .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+    .replace(/\{pixKey\}/gi, pixKey)
+    .replace(/\{pixName\}/gi, pixName)
+    .replace(/\{couple\}/gi, couple);
 
   const body = {
     number,
@@ -543,6 +562,9 @@ app.post("/api/reservations", async (req, res) => {
             whaticketTemplate: settings.whaticketTemplate,
             whaticketSign: settings.whaticketSign,
             whaticketClose: settings.whaticketClose,
+            pixKey: settings.pixKey,
+            pixName: settings.pixName,
+            coupleNames: settings.coupleNames,
           },
           {
             itemNome: item.nome,
@@ -638,6 +660,7 @@ app.get("/api/settings", async (req, res) => {
     id: settings.id,
     pixKey: settings.pixKey,
     pixName: settings.pixName,
+    coupleNames: settings.coupleNames,
     weddingDate: settings.weddingDate,
   });
 });
@@ -710,6 +733,7 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             id: "global",
             pixKey: String(settings.pixKey ?? ""),
             pixName: String(settings.pixName ?? ""),
+            coupleNames: String(settings.coupleNames ?? "Tais & Yran"),
             weddingDate: String(settings.weddingDate ?? "2027-02-02"),
             whatsappNumber: String(settings.whatsappNumber ?? ""),
             whaticketApiUrl: String(settings.whaticketApiUrl ?? "https://api.whaticketup.com.br/api/messages/send"),

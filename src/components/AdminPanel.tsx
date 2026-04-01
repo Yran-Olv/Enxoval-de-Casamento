@@ -21,12 +21,23 @@ export default function AdminPanel() {
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
   const [registry, setRegistry] = useState<EnxovalItem[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
+  const defaultReservationTemplate =
+    '🎁 Nova reserva no site ({couple})\n\n' +
+    'Presente: {item}\n' +
+    'Convidado(a): {nome}\n' +
+    'WhatsApp: {whatsapp}\n' +
+    'Recado: {mensagem}\n\n' +
+    'Opções de presente: podem comprar o item por conta própria e entregar aos noivos, ou enviar o valor via PIX:\n' +
+    'Chave PIX: {pixKey}\n' +
+    'Titular: {pixName}';
+
   const [pixSettings, setPixSettings] = useState<SettingsData>({
     pixKey: '',
     pixName: '',
+    coupleNames: 'Tais & Yran',
     weddingDate: '2027-02-02',
     whaticketApiUrl: 'https://api.whaticketup.com.br/api/messages/send',
-    whaticketTemplate: 'Nova reserva no site.\nItem: {item}\nConvidado: {nome}\nWhatsApp: {whatsapp}\nMensagem: {mensagem}',
+    whaticketTemplate: defaultReservationTemplate,
   });
 
   // Login states
@@ -554,6 +565,10 @@ export default function AdminPanel() {
                     <input type="text" value={pixSettings.pixName || ''} onChange={e => setPixSettings({ ...pixSettings, pixName: e.target.value })} placeholder="Nome completo do titular da conta" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
                   </div>
                   <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Nomes do casal (site e mensagens)</label>
+                    <input type="text" value={pixSettings.coupleNames || ''} onChange={e => setPixSettings({ ...pixSettings, coupleNames: e.target.value })} placeholder="Ex.: Tais & Yran" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
                     <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Data do Casamento</label>
                     <input type="date" required value={pixSettings.weddingDate || ''} onChange={e => setPixSettings({ ...pixSettings, weddingDate: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
                   </div>
@@ -579,7 +594,10 @@ export default function AdminPanel() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Template da mensagem WhatsApp</label>
-                    <textarea rows={5} value={pixSettings.whaticketTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })} placeholder="Mensagem usada nos avisos automáticos do WhatsApp" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <textarea rows={8} value={pixSettings.whaticketTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })} placeholder={defaultReservationTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
+                      Variáveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">

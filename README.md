@@ -1,169 +1,141 @@
-# 🎁 Nosso Enxoval (Tais & Yran)
+# Nosso Enxoval (Tais & Yran)
 
-Site de lista de casamento onde convidados escolhem presentes e os noivos gerenciam tudo em um painel.
-
----
-
-# 🚀 INSTALAÇÃO RÁPIDA (PRODUÇÃO COM DOCKER)
-
-> Siga exatamente esses passos — sem pular.
+Site de lista de casamento: convidados reservam presentes e o casal gerencia enxoval, comprados, reservas e configurações no painel administrativo.
 
 ---
 
-## ✅ 1. Entrar no projeto
+## Índice
+
+1. [Requisitos](#requisitos)
+2. [Produção com Docker](#produção-com-docker)
+3. [Domínio e HTTPS (Nginx + Certbot)](#domínio-e-https-nginx--certbot)
+4. [Atualizar em produção](#atualizar-em-produção)
+5. [Comandos úteis (Docker)](#comandos-úteis-docker)
+6. [Painel administrativo](#painel-administrativo)
+7. [App Android / iOS (Capacitor)](#app-android--ios-capacitor)
+8. [Desenvolvimento local](#desenvolvimento-local)
+9. [Problemas frequentes](#problemas-frequentes)
+
+---
+
+## Requisitos
+
+- Docker e Docker Compose no servidor
+- Domínio apontando para o IP (opcional, para HTTPS)
+- Repositório clonado no servidor (ex.: `/home/deploy/taiseyran`)
+
+---
+
+## Produção com Docker
+
+### 1. Entrar na pasta do projeto
 
 ```bash
 cd /home/deploy/taiseyran
 ```
 
----
+### 2. Criar o `.env`
 
-## ✅ 2. Criar o `.env`
+Crie o arquivo `.env` na raiz (pode copiar de um modelo se existir no repositório) e preencha as variáveis abaixo.
 
-```bash
-cp .env.docker.example .env
-nano .env
-```
-
-### ✏️ Edite apenas isso:
+**Mínimo para começar:**
 
 ```env
 APP_URL=http://IP-DO-SERVIDOR
 PORT=3010
-
-DB_PASS=devlocal
-
-JWT_SECRET=cole_um_secret_aqui
-ADMIN_PASSWORD=123456
+DB_PASS=yrandev
+JWT_SECRET=cole_um_secret_gerado
+ADMIN_PASSWORD=yrandev
 ```
 
-### 📄 `.env` completo (produção com Docker)
+Gerar `JWT_SECRET`:
+
+```bash
+openssl rand -hex 32
+```
+
+**Exemplo completo (produção via `docker-compose.yml`):**
 
 ```env
-# URL pública do site (com https quando tiver domínio/SSL)
 APP_URL=https://taiseyran.com.br
-
-# Porta no host (container app escuta em 3000 internamente)
 PORT=3010
 
-# Banco (produção via Docker Compose)
-# Opção A (recomendada aqui): variáveis separadas usadas no docker-compose
 DB_DIALECT=postgres
 DB_USER=enxoval
 DB_PASS=yrandev
 DB_NAME=enxoval
 DB_PORT=5432
 
-# Opção B (opcional): URL única, se preferir
-# DATABASE_URL="postgresql://enxoval:yrandev@localhost:5432/enxoval?schema=public"
-
-# Autenticação
 JWT_SECRET=gere_com_openssl_rand_hex_32
 ADMIN_PASSWORD=yrandev
-# Opcional: se não definir, usa sistemazapzap@gmail.com
 ADMIN_EMAIL=sistemazapzap@gmail.com
 ```
 
-### 🔐 Gerar JWT_SECRET:
-```bash
-openssl rand -hex 32
-```
+Opcional: em vez de `DB_*`, pode usar uma única linha `DATABASE_URL` (não é obrigatório no Compose atual).
 
----
+**Regras:** use `=` nas variáveis; não deixe valores obrigatórios vazios; evite caracteres estranhos nas senhas.
 
-## ⚠️ IMPORTANTE
-- NÃO use `:` → use `=`
-- NÃO deixe vazio
-- NÃO use caracteres estranhos na senha
-
----
-
-## ✅ 3. Subir o projeto
+### 3. Subir os containers
 
 ```bash
 docker compose up -d --build
-docker compose down -v
-docker compose up -d
 ```
 
-👉 Aguarde (primeira vez demora)
+Na primeira vez o build pode demorar. O container da aplicação aplica migrações do Prisma ao iniciar (`docker/entrypoint.sh`).
+
+> **Atenção:** `docker compose down -v` apaga o volume do PostgreSQL. Use só se quiser **zerar o banco** de propósito.
+
+### 4. Acessar
+
+- Site: `http://IP-DO-SERVIDOR:3010` (ou a porta definida em `PORT`)
+- Admin: `/admin`
+
+**Login inicial:** e-mail conforme `ADMIN_EMAIL` (padrão documentado no projeto) e senha `ADMIN_PASSWORD`.
 
 ---
 
-## ✅ 4. Acessar o site
+## Domínio e HTTPS (Nginx + Certbot)
 
-http://IP-DO-SERVIDOR:3010
+### DNS
 
----
+| Tipo | Nome | Valor        |
+|------|------|--------------|
+| A    | @    | IP do servidor |
+| A    | www  | IP do servidor |
 
-## 🔐 Login admin
-
-- Email: sistemazapzap@gmail.com  
-- Senha: a que você colocou em ADMIN_PASSWORD
-
----
-
-# 🌐 COLOCAR DOMÍNIO + HTTPS
-
-## ✅ 1. Configurar DNS
-
-Criar registros:
-
-Tipo: A  
-Nome: @  
-Valor: IP_DO_SERVIDOR  
-
-Tipo: A  
-Nome: www  
-Valor: IP_DO_SERVIDOR  
-
----
-
-## ✅ 2. Instalar Nginx + Certbot
+### Nginx e Certbot
 
 ```bash
 apt update
 apt install -y nginx certbot python3-certbot-nginx
 ```
 
----
-
-## ✅ 3. Ativar configuração do site
+Ativar site (ajuste caminho e nome do arquivo conforme o repositório):
 
 ```bash
 cd /home/deploy/taiseyran
 
 sudo cp deploy/nginx-taiseyran-com-br.conf /etc/nginx/sites-available/taiseyran
-sudo ln -s /etc/nginx/sites-available/taiseyran /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/taiseyran /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
 sudo nginx -t
 sudo systemctl restart nginx
 ```
 
----
-
-## ✅ 4. Gerar SSL
+SSL:
 
 ```bash
 certbot --nginx -d taiseyran.com.br -d www.taiseyran.com.br --redirect -m seu@email.com --agree-tos --non-interactive
 ```
 
----
+Atualize o `.env`:
 
-## ✅ 5. Atualizar `.env`
-
-```bash
-nano .env
+```env
+APP_URL=https://taiseyran.com.br
 ```
 
-Trocar:
-
-APP_URL=https://taiseyran.com.br
-
----
-
-## ✅ 6. Reiniciar
+Reinicie a aplicação:
 
 ```bash
 docker compose up -d
@@ -171,9 +143,9 @@ docker compose up -d
 
 ---
 
-# 🔄 ATUALIZAR EM PRODUÇÃO (INCLUSIVE NOVAS TABELAS)
+## Atualizar em produção
 
-Sempre que fizer alterações no projeto e enviar para o GitHub:
+Após enviar alterações para o GitHub:
 
 ```bash
 cd /home/deploy/taiseyran
@@ -181,191 +153,148 @@ git pull origin main
 docker compose up -d --build
 ```
 
-## ✅ Quando houver novas tabelas/colunas no banco (Prisma)
+### Migrações novas (tabelas/colunas)
 
-Se você criou uma migration nova (ex.: `prisma/migrations/...`), pode seguir o mesmo comando acima.
-O container da aplicação já executa automaticamente:
-
-```bash
-npx tsx scripts/run-prisma.ts migrate deploy
-```
-
-antes de subir o servidor (veja `docker/entrypoint.sh`).
-
-### Fluxo recomendado para mudanças de banco:
-
-1. No seu ambiente de trabalho:
-   - alterar `prisma/schema.prisma`
-   - criar migration (exemplo):
-
-```bash
-DATABASE_URL="postgresql://enxoval:yrandev@localhost:5432/enxoval?schema=public" npm run db:migrate
-```
-
-2. Commitar e enviar para o GitHub (incluindo pasta `prisma/migrations`).
-3. Em produção:
-   - `git pull origin main`
-   - `docker compose up -d --build`
-4. Conferir logs:
+O mesmo fluxo acima basta: ao subir, o entrypoint executa `migrate deploy`. Confira os logs:
 
 ```bash
 docker compose logs -f app
 ```
 
-## ⚠️ Se aparecer "local changes would be overwritten by merge"
+**Fluxo recomendado para mudanças no schema:**
 
-Execute antes do `git pull`:
+1. No ambiente de desenvolvimento: alterar `prisma/schema.prisma` e gerar migration.
+2. Commitar a pasta `prisma/migrations` e fazer push.
+3. Em produção: `git pull` + `docker compose up -d --build`.
+
+Exemplo local para criar migration (ajuste `DATABASE_URL` ao seu Postgres):
+
+```bash
+DATABASE_URL="postgresql://enxoval:yrandev@127.0.0.1:5432/enxoval?schema=public" npm run db:migrate
+```
+
+### Conflito no `git pull` (“local changes would be overwritten”)
 
 ```bash
 git stash push -u -m "temp-prod"
 git pull origin main
-```
-
-Depois pode descartar o stash (quando não precisar):
-
-```bash
-git stash list
+# depois, se não precisar do stash:
 git stash drop
 ```
 
 ---
 
-# 🛠️ COMANDOS ÚTEIS
+## Comandos úteis (Docker)
 
 ```bash
 docker compose ps
-docker compose logs -f
+docker compose logs -f app
 docker compose down
 docker compose up -d --build
 ```
 
 ---
 
-# 📱 ANDROID E iOS (CAPACITOR)
+## Painel administrativo
 
-Para gerar aplicativo nativo (Play Store / App Store), use Capacitor.
+- **Enxoval / Comprados / Reservas:** CRUD e métricas do enxoval.
+- **Configurações:** sub-abas — Conta admin, Geral/PIX, WhatsApp, Backup.
+- **WhatsApp:** URL da API (ex.: `https://api.whaticketup.com.br/api/messages/send`), número de destino, chave da API e template de mensagem. Cada instalação pode apontar para um Whaticket diferente.
+- **Backup:** exportar/importar JSON (lista, reservas, comprados, configurações, usuários) para migrar VPS ou clonar para outro cliente.
 
-## ✅ 1. Definir API para o app
+---
 
-No app mobile, não existe o mesmo domínio do servidor web.  
-Então a API deve ser absoluta:
+## App Android / iOS (Capacitor)
 
-```bash
-cp .env.mobile.example .env.mobile
-nano .env.mobile
-```
+O front pode ser empacotado com Capacitor. A API no mobile precisa ser absoluta.
 
-Exemplo:
+1. Criar `.env.mobile` (ex.: `cp .env.mobile.example .env.mobile`):
 
 ```env
 VITE_API_URL=https://taiseyran.com.br
 ```
 
-### 📄 `.env.mobile` completo
-
-```env
-# URL base da API em produção (sem /api no final)
-VITE_API_URL=https://taiseyran.com.br
-```
-
-## ✅ 2. Build web + sync nativo
+2. Build e sync:
 
 ```bash
 npm install
 npm run mobile:sync
 ```
 
-Isso gera `dist/` e sincroniza com Android/iOS.
-
-## ✅ 3. Android
+3. **Android (primeira vez):**
 
 ```bash
 npx cap add android
 npm run mobile:android
 ```
 
-No Android Studio:
-- espere o Gradle terminar
-- rode no emulador/dispositivo
-- para release, gere `AAB` (Build > Generate Signed Bundle/APK)
-
-## ✅ 4. iOS (somente macOS)
+4. **iOS (macOS):**
 
 ```bash
 npx cap add ios
 npm run mobile:ios
 ```
 
-No Xcode:
-- configure Team/Signing
-- rode no simulador/iPhone
-- para release, Archive e envie ao App Store Connect
+Após mudanças no front: `npm run mobile:sync` de novo.
 
-## ⚠️ Observações
+---
 
-- Login via cookie pode exigir HTTPS e ajustes de SameSite no iOS/Android.
-- Se preferir, migre autenticação para JWT em header no app mobile.
-- Sempre que alterar front-end, rode novamente:
+## Desenvolvimento local
+
+Postgres opcional via Docker:
 
 ```bash
-npm run mobile:sync
+docker compose -f docker-compose.dev.yml up -d
 ```
 
----
-
-# ⚠️ ERROS COMUNS
-
-### DB_PASS faltando
-DB_PASS=devlocal
-
----
-
-### DNS não funciona
+No `.env` local, aponte `DATABASE_URL` para o Postgres (ex.: porta `5433` conforme `docker-compose.dev.yml`).
 
 ```bash
-nano /etc/resolv.conf
+npm install
+npm run db:migrate
+npm run dev
 ```
 
-Adicionar:
-nameserver 8.8.8.8  
-nameserver 1.1.1.1  
+Abrir: `http://localhost:3000`
 
 ---
 
-### Porta ocupada
-PORT=8080
+## Problemas frequentes
 
----
+### `DB_PASS` / variáveis obrigatórias
 
-### Token do Whaticket
+O `docker-compose.yml` exige `DB_PASS` (e demais variáveis indicadas no compose). Verifique o `.env`.
 
-O token **não é criado neste site**.  
-Você precisa configurar no painel do Whaticket:
+### DNS não resolve
 
-1. **Conexões**
-2. **Editar** a conexão que envia mensagens
-3. Preencher/salvar o **Token**
+```bash
+sudo nano /etc/resolv.conf
+```
 
-Depois, no nosso painel (`/admin` → Configurações), cole no campo **Token Whaticket** e clique em **Salvar Configurações**.
+Exemplo: `nameserver 8.8.8.8` e `nameserver 1.1.1.1`.
 
----
+### Porta em uso
 
-### Erro de banco (Prisma)
+Altere `PORT` no `.env` (ex.: `8080`).
+
+### WhatsApp / Whaticket retorna 403 (token inválido)
+
+Gere um token válido no painel do Whaticket (conexão) e salve no admin. Confirme a **URL da API** correta para aquela instância e o número no formato internacional (ex.: `5585999999999`).
+
+### Erro de conexão com PostgreSQL (Prisma)
+
+Ajuste usuário/senha no Postgres ou no `.env`. Exemplo em servidor com Postgres nativo:
 
 ```bash
 sudo -u postgres psql
 ```
 
 ```sql
-ALTER USER enxoval WITH PASSWORD 'devlocal';
-ALTER USER enxoval CREATEDB;
+ALTER USER enxoval WITH PASSWORD 'sua_senha';
 ```
 
 ---
 
-# ✅ PRONTO
+## Repositório
 
-Se seguir isso exatamente:
-- funciona
-- sobe
-- SSL ok
+Código: [Yran-Olv/Enxoval-de-Casamento](https://github.com/Yran-Olv/Enxoval-de-Casamento)
