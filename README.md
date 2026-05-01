@@ -171,6 +171,7 @@ Exemplo local para criar migration (ajuste `DATABASE_URL` ao seu Postgres):
 
 ```bash
 DATABASE_URL="postgresql://enxoval:yrandev@127.0.0.1:5432/enxoval?schema=public" npm run db:migrate
+docker compose exec app sh -c 'DATABASE_URL="postgresql://enxoval:yrandev@db:5432/enxoval?schema=public" npm run db:migrate'
 ```
 
 ### Conflito no `git pull` (“local changes would be overwritten”)
@@ -201,6 +202,7 @@ docker compose up -d --build
 - **Configurações:** sub-abas — Conta admin, Geral/PIX, WhatsApp, Backup.
 - **WhatsApp:** URL da API (ex.: `https://api.whaticketup.com.br/api/messages/send`), número de destino, chave da API e template de mensagem. Cada instalação pode apontar para um Whaticket diferente.
 - **Backup:** exportar/importar JSON (lista, reservas, comprados, configurações, usuários) para migrar VPS ou clonar para outro cliente.
+- **Guia técnico da integração WhatsApp:** veja `docs/WHATSAPP_API.md` para reutilizar em outros projetos.
 
 ---
 
