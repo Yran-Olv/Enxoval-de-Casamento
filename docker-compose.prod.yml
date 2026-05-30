@@ -1,0 +1,58 @@
+# Produção — PostgreSQL só rede interna; app em 127.0.0.1 (Nginx no host).
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+#
+# Porta padrão 3012 (evita conflito com Rubinho 3010 e MAF 3011).
+
+name: enxoval
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-enxoval}
+      POSTGRES_PASSWORD: "${DB_PASS:?defina_DB_PASS_no_env}"
+      POSTGRES_DB: ${DB_NAME:-enxoval}
+    volumes:
+      - enxoval_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - enxoval_internal
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3012}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      APP_URL: "${APP_URL:?defina_APP_URL_no_env}"
+      JWT_SECRET: "${JWT_SECRET:?defina_JWT_SECRET_no_env}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?defina_ADMIN_PASSWORD_no_env}"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-enxoval}
+      DB_PASS: "${DB_PASS}"
+      DB_NAME: ${DB_NAME:-enxoval}
+      DB_DIALECT: postgres
+      DATABASE_URL: "postgresql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}?schema=public"
+    volumes:
+      - ./backups:/app/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - enxoval_internal
+
+networks:
+  enxoval_internal:
+    driver: bridge
+
+volumes:
+  enxoval_pgdata:

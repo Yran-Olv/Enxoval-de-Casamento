@@ -18,7 +18,7 @@ warn() { printf '\033[0;33m[AVISO]\033[0m %s\n' "$*"; }
 err() { printf '\033[0;31m[ERRO]\033[0m %s\n' "$*" >&2; }
 
 DEFAULT_DOMAIN="taiseyran.com.br"
-DEFAULT_HTTP_PORT="3255"
+DEFAULT_HTTP_PORT="3012"
 DEFAULT_DB_USER="enxoval"
 DEFAULT_DB_NAME="enxoval"
 DEFAULT_DB_HOST="localhost"
