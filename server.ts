@@ -23,7 +23,10 @@ if (!databaseUrl) {
 const pool = new Pool({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "dev-only-secret-not-for-production");
+if (process.env.NODE_ENV === "production" && JWT_SECRET.length < 32) {
+  throw new Error("Defina JWT_SECRET com pelo menos 32 caracteres no ambiente de produção.");
+}
 
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
@@ -545,7 +548,7 @@ app.post("/api/login", async (req, res) => {
   const emailRaw = String(req.body?.email ?? "").trim();
   const password = String(req.body?.password ?? "");
   const adminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+  const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "admin123");
 
   try {
     // 1) Utilizadores na tabela User (ex.: criados pelo script de instalação)
@@ -601,7 +604,7 @@ app.post("/api/admin/profile", authenticate, async (req: any, res) => {
     }
 
     const envAdminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
-    const envAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+    const envAdminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "admin123");
 
     const tokenUserEmail = String(req.user?.email ?? "").trim().toLowerCase();
     let dbUser = req.user?.id
