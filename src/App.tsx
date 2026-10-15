@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import WeddingMusic from './components/WeddingMusic';
 
 const PurchasedItems = lazy(() => import('./components/PurchasedItems'));
 const RegistryList = lazy(() => import('./components/RegistryList'));
@@ -103,6 +104,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <div className="relative min-h-screen selection:bg-gold/20 selection:text-ink">
       <Navbar onNavigate={navigate} currentPage={currentPage} />
+      {currentPage !== 'admin' && <WeddingMusic />}
 
       <main>
         <Suspense fallback={<p className="px-6 pt-32 text-center font-serif text-2xl" role="status">Carregando…</p>}>

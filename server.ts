@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readdir, stat, unlink, writeFile } from "fs/promises";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -17,6 +17,7 @@ import {
   InputError,
   assertHttpsApiUrl,
   createRateLimiter,
+  detectAudio,
   isRsvpClosed,
   parseCeremonyTime,
   parseIsoDate,
@@ -1010,6 +1011,78 @@ app.delete("/api/reservations/:id", authenticate, async (req, res) => {
     console.error("DELETE /api/reservations:", err);
     res.status(500).json({ error: "Erro ao cancelar reserva." });
   }
+});
+
+const MUSIC_DIR = path.join(process.cwd(), "uploads");
+const DEFAULT_MUSIC = path.join(process.cwd(), "public", "default-wedding.wav");
+
+async function customMusicPath() {
+  try {
+    const names = await readdir(MUSIC_DIR);
+    const file = names.find((name) => name.startsWith("wedding-music."));
+    return file ? path.join(MUSIC_DIR, file) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function removeCustomMusic() {
+  try {
+    const names = await readdir(MUSIC_DIR);
+    await Promise.all(
+      names
+        .filter((name) => name.startsWith("wedding-music."))
+        .map((name) => unlink(path.join(MUSIC_DIR, name)))
+    );
+  } catch {
+    // A pasta ainda não existe.
+  }
+}
+
+app.get("/api/music", async (_req, res) => {
+  const custom = await customMusicPath();
+  const file = custom || DEFAULT_MUSIC;
+  try {
+    await stat(file);
+  } catch {
+    return res.status(404).json({ error: "Música indisponível." });
+  }
+  return res.sendFile(file);
+});
+
+app.get("/api/music/status", authenticate, async (_req, res) => {
+  const custom = await customMusicPath();
+  res.json({ custom: Boolean(custom) });
+});
+
+app.post(
+  "/api/music",
+  authenticate,
+  express.raw({ type: () => true, limit: "12mb" }),
+  async (req, res) => {
+    try {
+      const body = req.body;
+      if (!Buffer.isBuffer(body)) {
+        return res.status(400).json({ error: "Envie um arquivo de áudio." });
+      }
+      const detected = detectAudio(body);
+      if (!detected) {
+        return res.status(400).json({ error: "Use MP3, WAV, M4A, OGG ou WEBM de até 12 MB." });
+      }
+      await mkdir(MUSIC_DIR, { recursive: true });
+      await removeCustomMusic();
+      await writeFile(path.join(MUSIC_DIR, `wedding-music.${detected.ext}`), body);
+      return res.json({ success: true, custom: true });
+    } catch (err) {
+      console.error("POST /api/music:", err instanceof Error ? err.message : "falha");
+      return res.status(400).json({ error: "Não foi possível guardar a música." });
+    }
+  }
+);
+
+app.delete("/api/music", authenticate, async (_req, res) => {
+  await removeCustomMusic();
+  res.json({ success: true, custom: false });
 });
 
 // Settings

@@ -240,6 +240,21 @@ export function whatsappChatUrl(raw: string): string {
   return `https://wa.me/${withCountry}`;
 }
 
+const AUDIO_SIGNATURES: Array<{ ext: string; mime: string; test: (buf: Buffer) => boolean }> = [
+  { ext: "mp3", mime: "audio/mpeg", test: (buf) => buf.length > 3 && buf.subarray(0, 3).toString("ascii") === "ID3" },
+  { ext: "mp3", mime: "audio/mpeg", test: (buf) => buf.length > 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0 },
+  { ext: "wav", mime: "audio/wav", test: (buf) => buf.length > 12 && buf.subarray(0, 4).toString("ascii") === "RIFF" && buf.subarray(8, 12).toString("ascii") === "WAVE" },
+  { ext: "ogg", mime: "audio/ogg", test: (buf) => buf.length > 4 && buf.subarray(0, 4).toString("ascii") === "OggS" },
+  { ext: "webm", mime: "audio/webm", test: (buf) => buf.length > 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3 },
+  { ext: "m4a", mime: "audio/mp4", test: (buf) => buf.length > 12 && buf.subarray(4, 8).toString("ascii") === "ftyp" },
+];
+
+export function detectAudio(buf: Buffer): { ext: string; mime: string } | null {
+  if (!Buffer.isBuffer(buf) || buf.length < 1024 || buf.length > 12 * 1024 * 1024) return null;
+  const match = AUDIO_SIGNATURES.find((item) => item.test(buf));
+  return match ? { ext: match.ext, mime: match.mime } : null;
+}
+
 export function createRateLimiter(limit: number, windowMs: number) {
   const hits = new Map<string, number[]>();
   return (key: string, now = Date.now()): boolean => {

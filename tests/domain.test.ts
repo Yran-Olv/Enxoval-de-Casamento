@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildIcs,
   calendarRange,
+  detectAudio,
   createRateLimiter,
   googleCalendarUrl,
   InputError,
@@ -108,6 +109,17 @@ test("calendário mantém o horário local de São Paulo, sem converter para UTC
 test("link de WhatsApp completa o DDI brasileiro", () => {
   assert.equal(whatsappChatUrl("(34) 99999-8888"), "https://wa.me/5534999998888");
   assert.equal(whatsappChatUrl("5534999998888"), "https://wa.me/5534999998888");
+});
+
+test("reconhece áudio real e recusa arquivo curto ou desconhecido", () => {
+  const wav = Buffer.alloc(1200);
+  wav.write("RIFF", 0);
+  wav.write("WAVE", 8);
+  assert.deepEqual(detectAudio(wav), { ext: "wav", mime: "audio/wav" });
+  const mp3 = Buffer.alloc(1200);
+  mp3.write("ID3", 0);
+  assert.equal(detectAudio(mp3)?.ext, "mp3");
+  assert.equal(detectAudio(Buffer.from("nao-e-audio")), null);
 });
 
 test("limite de tentativas bloqueia a chamada seguinte na mesma janela", () => {

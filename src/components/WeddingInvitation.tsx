@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { api } from '../api';
-import { buildIcs, googleCalendarUrl, invitationUrl, isRsvpClosed } from '../../server/domain';
+import { googleCalendarUrl, invitationUrl, isRsvpClosed } from '../../server/domain';
 import { CalendarDays, CheckCircle2, Clock3, Heart, MapPin, MessageCircle, Music2, Share2, Sparkles } from 'lucide-react';
 
 type InvitationSettings = {
@@ -78,23 +78,6 @@ export default function WeddingInvitation() {
   }), [location, settings]);
   const deadlineClosed = isRsvpClosed(settings.rsvpDeadline);
 
-  const downloadCalendar = () => {
-    const ics = buildIcs({
-      coupleNames: settings.coupleNames,
-      weddingDate: settings.weddingDate,
-      ceremonyTime: settings.ceremonyTime || '16:00',
-      invitationMessage: settings.invitationMessage,
-      location,
-    });
-    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'casamento.ics';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   const shareInvite = async () => {
     const payload = { title: `Casamento — ${settings.coupleNames}`, text: settings.invitationMessage, url: shareUrl };
     try {
@@ -162,7 +145,6 @@ export default function WeddingInvitation() {
           </div>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a href={calendarLink} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#82694f] px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-white transition hover:bg-[#6c543d]"><CalendarDays size={16} /> Google Agenda</a>
-            <button type="button" onClick={downloadCalendar} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-[#82694f]">Arquivo de agenda</button>
             <button type="button" onClick={() => void shareInvite()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-[#82694f]"><Share2 size={16} /> Compartilhar</button>
           </div>
           {shareNote && <p className="mt-3 text-sm text-[#806748]" role="status">{shareNote}</p>}

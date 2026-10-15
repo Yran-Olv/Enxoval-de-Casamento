@@ -278,7 +278,8 @@ Abrir: `http://localhost:3000`
 - No painel `/admin`, abra **Configurações → Geral / PIX** para definir data, horário, mensagem, locais, endereços, traje, prazo de RSVP e, se quiser, a história do casal. A história só aparece no convite quando o campo tem texto.
 - Os convidados podem responder **Estarei presente** ou **Não poderei ir**. A confirmação registra nome, WhatsApp, número de pessoas e recado. Uma nova resposta com o mesmo WhatsApp atualiza a anterior. Os dados aparecem só na aba **Confirmações**; não há listagem pública.
 - Compartilhar copia ou envia a URL real do navegador (`origem/convite`).
-- Os endereços geram links do Google Maps. Google Agenda e o arquivo `.ics` usam o horário de parede em `America/Sao_Paulo`, sem converter a cerimônia para UTC.
+- O site toca uma música padrão. Em Configurações → Geral / PIX dá para enviar outra faixa (MP3, WAV, M4A, OGG ou WEBM, até 12 MB) ou voltar para a padrão. O arquivo enviado fica na pasta `uploads/` do servidor.
+- Os endereços geram links do Google Maps. O Google Agenda usa o horário de parede em `America/Sao_Paulo`, sem converter a cerimônia para UTC.
 - O casal pode apagar uma resposta no painel. As confirmações entram no backup JSON. Faça um backup antes de importar outro arquivo: a importação substitui os dados atuais.
 - Reservar um presente não significa que o PIX foi pago. O aviso de PIX só registra a intenção enviada pelo convidado.
 

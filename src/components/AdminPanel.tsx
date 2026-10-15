@@ -27,6 +27,10 @@ export default function AdminPanel() {
   const [rsvpQuery, setRsvpQuery] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [registryQuery, setRegistryQuery] = useState('');
+  const [musicCustom, setMusicCustom] = useState(false);
+  const [musicFile, setMusicFile] = useState<File | null>(null);
+  const [musicBusy, setMusicBusy] = useState(false);
+  const [musicVersion, setMusicVersion] = useState(0);
   const defaultReservationTemplate =
     '🎁 Nova reserva no site ({couple})\n\n' +
     'Presente: {item}\n' +
@@ -126,13 +130,15 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      const [reg, pur, res, set, rsvpData] = await Promise.all([
+      const [reg, pur, res, set, rsvpData, musicStatus] = await Promise.all([
         api.get('/registry'),
         api.get('/purchased'),
         api.get('/reservations'),
         api.get('/settings/admin'),
-        api.get('/rsvps')
+        api.get('/rsvps'),
+        api.get('/music/status')
       ]);
+      setMusicCustom(Boolean(musicStatus?.custom));
       setRegistry(reg);
       setPurchased(pur);
       setReservations(res);
@@ -709,6 +715,64 @@ export default function AdminPanel() {
                   <div className="space-y-2">
                     <label htmlFor="couple-story" className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">História do casal (opcional)</label>
                     <textarea id="couple-story" rows={4} maxLength={2000} value={pixSettings.coupleStory || ''} onChange={e => setPixSettings({ ...pixSettings, coupleStory: e.target.value })} placeholder="Um texto curto. Deixe em branco para não aparecer no convite." className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm resize-y" />
+                  </div>
+                  <div className="space-y-3 rounded-2xl border border-gold/10 bg-white/40 p-5">
+                    <h4 className="font-serif text-2xl">Música</h4>
+                    <p className="text-sm leading-relaxed opacity-70">
+                      O site já toca uma música padrão. Envie um MP3, WAV, M4A, OGG ou WEBM de até 12 MB para usar a faixa do casal.
+                    </p>
+                    <p className="text-xs uppercase tracking-widest opacity-60">{musicCustom ? 'Música personalizada' : 'Música padrão'}</p>
+                    <audio key={musicVersion} controls preload="none" src={`/api/music?v=${musicVersion}`} className="w-full" />
+                    <label htmlFor="wedding-music" className="block text-[10px] uppercase tracking-widest font-bold opacity-60">Arquivo de áudio</label>
+                    <input
+                      id="wedding-music"
+                      type="file"
+                      accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,audio/aac,.mp3,.wav,.m4a,.ogg,.webm"
+                      onChange={(e) => setMusicFile(e.target.files?.[0] ?? null)}
+                      className="block w-full text-sm"
+                    />
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        disabled={!musicFile || musicBusy}
+                        onClick={() => {
+                          if (!musicFile) return;
+                          setMusicBusy(true);
+                          api.uploadMusic(musicFile)
+                            .then(() => {
+                              setMusicCustom(true);
+                              setMusicFile(null);
+                              setMusicVersion((value) => value + 1);
+                              showNotice('success', 'Música atualizada.');
+                            })
+                            .catch((error: unknown) => showNotice('error', error instanceof Error ? error.message : 'Falha ao enviar a música.'))
+                            .finally(() => setMusicBusy(false));
+                        }}
+                        className="min-h-11 rounded-xl bg-ink px-6 py-3 text-[10px] font-bold uppercase tracking-widest text-white disabled:opacity-50"
+                      >
+                        {musicBusy ? 'Enviando…' : 'Enviar música'}
+                      </button>
+                      {musicCustom && (
+                        <button
+                          type="button"
+                          disabled={musicBusy}
+                          onClick={() => {
+                            setMusicBusy(true);
+                            api.delete('/music')
+                              .then(() => {
+                                setMusicCustom(false);
+                                setMusicVersion((value) => value + 1);
+                                showNotice('success', 'Voltou a tocar a música padrão.');
+                              })
+                              .catch((error: unknown) => showNotice('error', error instanceof Error ? error.message : 'Falha ao remover a música.'))
+                              .finally(() => setMusicBusy(false));
+                          }}
+                          className="min-h-11 rounded-xl border border-gold/20 px-6 py-3 text-[10px] font-bold uppercase tracking-widest"
+                        >
+                          Usar música padrão
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="rounded-2xl border border-gold/10 bg-gold/5 p-4 text-xs leading-relaxed opacity-70">O convite ficará disponível em <strong>/convite</strong>. Preencha os locais e endereços para habilitar os links do mapa. A história só aparece se este campo tiver texto.</p>
                   <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">

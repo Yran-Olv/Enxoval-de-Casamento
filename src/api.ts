@@ -75,5 +75,14 @@ export const api = {
       ...fetchOpts,
     });
     return parseResponse(res);
-  }
+  },
+  uploadMusic: async (file: File) => {
+    const res = await fetch(`${API_URL}/music`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    return parseResponse(res);
+  },
 };

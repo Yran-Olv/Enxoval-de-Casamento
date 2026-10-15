@@ -2,6 +2,8 @@ node_modules/
 dist/
 backups/*
 !backups/.gitkeep
+uploads/*
+!uploads/.gitkeep
 android/
 ios/
 .env
