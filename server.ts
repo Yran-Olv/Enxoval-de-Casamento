@@ -1783,18 +1783,32 @@ app.post("/api/admin/whatsapp/queue/:id/retry", authenticate, async (req, res) =
   }
 });
 
-app.get("/api/admin/whatsapp/incidents", authenticate, async (req, res) => {
+const handleGetIncidents = async (req: any, res: any) => {
   try {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit || 50)));
-    const incidents = await prisma.whatsAppIncident.findMany({
-      orderBy: { startedAt: "desc" },
-      take: limit,
-    });
-    res.json({ incidents });
+    const state = typeof req.query.state === "string" ? req.query.state : undefined;
+    const where: any = {};
+    if (state === "open") {
+      where.endedAt = null;
+    } else if (state === "resolved") {
+      where.endedAt = { not: null };
+    }
+    const [incidents, total] = await Promise.all([
+      prisma.whatsAppIncident.findMany({
+        where,
+        orderBy: { startedAt: "desc" },
+        take: limit,
+      }),
+      prisma.whatsAppIncident.count({ where }),
+    ]);
+    res.json({ incidents, total });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Erro ao buscar histórico de incidentes." });
   }
-});
+};
+
+app.get("/api/admin/whatsapp/incidents", authenticate, handleGetIncidents);
+app.get("/api/admin/whatsapp/history", authenticate, handleGetIncidents);
 
 app.post("/api/admin/whatsapp/test-email", authenticate, async (req, res) => {
   try {
