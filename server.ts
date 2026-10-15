@@ -215,7 +215,7 @@ function parseSettingsPayload(body: Record<string, unknown>, currentSettings?: a
   const rsvpDeadline = parseIsoDate(body.rsvpDeadline, "");
   const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   const coupleStory = String(body.coupleStory ?? "").trim().slice(0, 2000);
-  const invite = parseInviteSettings(body);
+  const invite = parseInviteSettings(body, currentSettings);
 
   const whatsappProvider = String(body.whatsappProvider ?? "zapo").trim() === "whaticket" ? "whaticket" : "zapo";
   const smtpHost = String(body.smtpHost ?? "").trim();

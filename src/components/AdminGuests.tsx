@@ -26,8 +26,10 @@ import {
   UserCheck,
   Phone,
   Users,
+  Edit3,
 } from 'lucide-react';
 import AdminWhatsAppContacts from './AdminWhatsAppContacts';
+import AdminInviteMessageModal from './AdminInviteMessageModal';
 
 type Attempt = { id: string; campaign: string; status: string; createdAt: string };
 type Guest = {
@@ -92,6 +94,7 @@ export default function AdminGuests({
   const [busy, setBusy] = useState(false);
   const [sendingGuestId, setSendingGuestId] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<'guests' | 'whatsapp_contacts'>('guests');
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
 
   const load = () =>
     api
@@ -486,6 +489,13 @@ export default function AdminGuests({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => setMessageModalOpen(true)}
+            className="min-h-11 rounded-xl border border-gold/30 bg-gold text-white hover:brightness-110 px-4 text-xs font-bold uppercase tracking-widest flex items-center gap-2 shadow-sm transition"
+          >
+            <Edit3 size={15} /> Editar Mensagem
+          </button>
+          <button
+            type="button"
             onClick={() => void showPreview(selected.length ? guests.find((g) => g.id === selected[0]) : visible[0])}
             className="min-h-11 rounded-xl border border-gold/20 bg-white/80 px-4 text-xs font-bold uppercase tracking-widest text-ink hover:bg-white flex items-center gap-2 transition"
           >
@@ -555,27 +565,40 @@ export default function AdminGuests({
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              {previewGuest && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const guest = previewGuest;
-                    setPreview(null);
-                    void sendSingle(guest);
-                  }}
-                  className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow"
-                >
-                  <Send size={14} /> Enviar para {previewGuest.name} Agora
-                </button>
-              )}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setPreview(null)}
-                className="px-6 py-3 rounded-xl bg-ink text-white text-xs font-bold uppercase tracking-wider"
+                onClick={() => {
+                  setPreview(null);
+                  setMessageModalOpen(true);
+                }}
+                className="px-5 py-3 rounded-xl border border-gold/30 bg-white hover:bg-gold/10 text-gold text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition"
               >
-                Fechar Prévia
+                <Edit3 size={14} /> Editar Modelo
               </button>
+
+              <div className="flex items-center gap-2">
+                {previewGuest && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const guest = previewGuest;
+                      setPreview(null);
+                      void sendSingle(guest);
+                    }}
+                    className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow"
+                  >
+                    <Send size={14} /> Enviar para {previewGuest.name} Agora
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreview(null)}
+                  className="px-6 py-3 rounded-xl bg-ink text-white text-xs font-bold uppercase tracking-wider"
+                >
+                  Fechar Prévia
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -843,6 +866,15 @@ export default function AdminGuests({
       </div>
         </>
       )}
+
+      {/* Modal de Personalização da Mensagem do WhatsApp */}
+      <AdminInviteMessageModal
+        isOpen={messageModalOpen}
+        onClose={() => setMessageModalOpen(false)}
+        onNotice={onNotice}
+        initialCampaign={campaign}
+        onSaved={() => void load()}
+      />
     </div>
   );
 }

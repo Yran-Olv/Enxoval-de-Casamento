@@ -845,6 +845,27 @@ export default function AdminPanel() {
                     </p>
                   </div>
 
+                  {/* Mensagem do Convite no WhatsApp */}
+                  <div className="space-y-2 p-5 rounded-2xl border border-gold/25 bg-amber-50/40">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] uppercase tracking-widest font-bold text-gold ml-2 flex items-center gap-1.5">
+                        <MessageSquare size={14} /> Mensagem do Convite no WhatsApp (Disparador e Agenda)
+                      </label>
+                      <span className="text-[10px] text-ink/50 font-sans">Abre com botão Webview</span>
+                    </div>
+                    <textarea
+                      rows={7}
+                      value={pixSettings.inviteTemplate || ''}
+                      onChange={e => setPixSettings({ ...pixSettings, inviteTemplate: e.target.value })}
+                      placeholder="Olá, {nome}! ❤️..."
+                      className="w-full px-5 py-4 bg-white border border-gold/15 rounded-2xl focus:border-gold outline-none text-sm resize-y leading-relaxed font-sans shadow-sm"
+                    />
+                    <p className="text-[10px] opacity-60 ml-2 leading-relaxed">
+                      Variáveis disponíveis: {'{nome}'} {'{data}'} {'{horario}'} {'{link}'} {'{casal}'} {'{local}'}.
+                      Esta é a mensagem entregue no WhatsApp dos convidados ao disparar o convite pelo painel, acompanhada do botão interativo oficial "Abrir Convite 💌".
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem de Aviso aos Noivos (Nova Reserva)</label>
                     <textarea

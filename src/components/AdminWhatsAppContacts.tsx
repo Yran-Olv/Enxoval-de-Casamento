@@ -20,7 +20,10 @@ import {
   X,
   MessageCircle,
   AlertTriangle,
+  Edit3,
+  MessageSquare,
 } from 'lucide-react';
+import AdminInviteMessageModal from './AdminInviteMessageModal';
 
 export type ContactItem = {
   phone: string;
@@ -79,6 +82,9 @@ export default function AdminWhatsAppContacts({
     alreadySentCount: number;
     pendingCount: number;
   } | null>(null);
+
+  // Modal para editar mensagem do convite
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
 
   const fetchContacts = async () => {
     setLoading(true);
@@ -318,6 +324,13 @@ export default function AdminWhatsAppContacts({
           <div className="flex flex-wrap gap-2.5 shrink-0">
             <button
               type="button"
+              onClick={() => setMessageModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl border border-gold/30 bg-gold text-white hover:brightness-110 text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-sm transition"
+            >
+              <Edit3 size={14} /> Editar Mensagem do Convite
+            </button>
+            <button
+              type="button"
               disabled={loading}
               onClick={() => void fetchContacts()}
               className="px-4 py-2.5 rounded-xl border border-gold/30 bg-white hover:bg-amber-50 text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2 shadow-sm transition disabled:opacity-50"
@@ -460,17 +473,27 @@ export default function AdminWhatsAppContacts({
           </button>
         </div>
 
-        <select
-          value={campaign}
-          onChange={(e) => setCampaign(e.target.value)}
-          className="min-h-11 rounded-2xl border border-gold/15 bg-white/80 px-4 text-sm font-semibold text-gold outline-none focus:border-gold"
-        >
-          {campaigns.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={campaign}
+            onChange={(e) => setCampaign(e.target.value)}
+            className="min-h-11 rounded-2xl border border-gold/15 bg-white/80 px-4 text-sm font-semibold text-gold outline-none focus:border-gold"
+          >
+            {campaigns.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => setMessageModalOpen(true)}
+            className="min-h-11 px-4 py-2 rounded-2xl border border-gold/25 bg-white/90 hover:bg-white text-xs font-bold uppercase tracking-wider text-gold flex items-center gap-1.5 shadow-sm transition shrink-0"
+          >
+            <Edit3 size={14} /> Editar Modelo
+          </button>
+        </div>
       </div>
 
       {/* Barra de Ações em Massa */}
@@ -762,6 +785,14 @@ export default function AdminWhatsAppContacts({
           </div>
         </div>
       )}
+
+      {/* Modal de Personalização da Mensagem do WhatsApp */}
+      <AdminInviteMessageModal
+        isOpen={messageModalOpen}
+        onClose={() => setMessageModalOpen(false)}
+        onNotice={onNotice}
+        initialCampaign={campaign}
+      />
     </div>
   );
 }

@@ -19,6 +19,8 @@ import {
   parseRsvpInput,
   readInviteContent,
   renderInviteMessage,
+  parseInviteSettings,
+  DEFAULT_INVITE_TEMPLATE,
 } from "../server/domain";
 
 test("token de convite é aleatório e não sequencial", () => {
@@ -215,4 +217,29 @@ test("buildInviteWebviewUrl gera URL com token, whatsapp, nome e wa=1 para o Wha
   assert.match(fallback, /nome=Convidado(\+|%20)Geral/);
   assert.match(fallback, /wa=1/);
 });
+
+test("parseInviteSettings aceita modelo editado de mensagem e preserva template em atualização parcial", () => {
+  const customTemplate = "Oie, {nome}! Você foi convidado para o casório de {casal} em {data}. Link: {link}";
+  const saved = parseInviteSettings({ inviteTemplate: customTemplate });
+  assert.equal(saved.inviteTemplate, customTemplate);
+
+  // Atualização parcial sem inviteTemplate deve preservar o existente
+  const partial = parseInviteSettings({}, { inviteTemplate: customTemplate });
+  assert.equal(partial.inviteTemplate, customTemplate);
+
+  // Renderização do modelo personalizado
+  const rendered = renderInviteMessage(saved.inviteTemplate, {
+    nome: "yran",
+    data: "02 de janeiro de 2027",
+    horario: "16:00",
+    link: "https://taiseyran.com.br/c/token?wa=1",
+    casal: "Tais & Yran",
+    local: "Igreja",
+  });
+  assert.equal(
+    rendered,
+    "Oie, yran! Você foi convidado para o casório de Tais & Yran em 02 de janeiro de 2027. Link: https://taiseyran.com.br/c/token?wa=1"
+  );
+});
+
 

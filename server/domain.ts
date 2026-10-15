@@ -704,24 +704,44 @@ export type InviteSettings = {
   soonTemplate: string;
 };
 
-export function parseInviteSettings(body: Record<string, unknown>): InviteSettings {
-  const gallery = parseGallery(body.gallery ?? body.galleryJson ?? "[]");
-  const schedule = parseSchedule(body.schedule ?? body.scheduleJson ?? "[]");
-  const menu = parseMenu(body.menu ?? body.menuJson ?? "[]");
-  const groomsmen = parseGroomsmen(body.groomsmen ?? body.groomsmenJson ?? "[]");
-  const quiz = parseQuiz(body.quiz ?? body.quizJson ?? "[]");
-  const hotels = parseHotels(body.hotels ?? body.hotelsJson ?? "[]");
-  const cityGuide = parseCityGuide(body.cityGuide ?? body.cityGuideJson ?? "[]");
-  const faq = parseFaq(body.faq ?? body.faqJson ?? "[]");
-  const sectionStyles = parseSectionStyles(body.sectionStyles ?? body.sectionStylesJson ?? "{}");
-  const sectionOrder = parseSectionOrder(body.sectionOrder ?? body.sectionOrderJson ?? "[]");
+export function parseInviteSettings(body: Record<string, unknown>, current?: any): InviteSettings {
+  const gallery = body.gallery !== undefined || body.galleryJson !== undefined
+    ? parseGallery(body.gallery ?? body.galleryJson ?? "[]")
+    : (current?.galleryJson ? JSON.parse(current.galleryJson) : []);
+  const schedule = body.schedule !== undefined || body.scheduleJson !== undefined
+    ? parseSchedule(body.schedule ?? body.scheduleJson ?? "[]")
+    : (current?.scheduleJson ? JSON.parse(current.scheduleJson) : []);
+  const menu = body.menu !== undefined || body.menuJson !== undefined
+    ? parseMenu(body.menu ?? body.menuJson ?? "[]")
+    : (current?.menuJson ? JSON.parse(current.menuJson) : []);
+  const groomsmen = body.groomsmen !== undefined || body.groomsmenJson !== undefined
+    ? parseGroomsmen(body.groomsmen ?? body.groomsmenJson ?? "[]")
+    : (current?.groomsmenJson ? JSON.parse(current.groomsmenJson) : []);
+  const quiz = body.quiz !== undefined || body.quizJson !== undefined
+    ? parseQuiz(body.quiz ?? body.quizJson ?? "[]")
+    : (current?.quizJson ? JSON.parse(current.quizJson) : []);
+  const hotels = body.hotels !== undefined || body.hotelsJson !== undefined
+    ? parseHotels(body.hotels ?? body.hotelsJson ?? "[]")
+    : (current?.hotelsJson ? JSON.parse(current.hotelsJson) : []);
+  const cityGuide = body.cityGuide !== undefined || body.cityGuideJson !== undefined
+    ? parseCityGuide(body.cityGuide ?? body.cityGuideJson ?? "[]")
+    : (current?.cityGuideJson ? JSON.parse(current.cityGuideJson) : []);
+  const faq = body.faq !== undefined || body.faqJson !== undefined
+    ? parseFaq(body.faq ?? body.faqJson ?? "[]")
+    : (current?.faqJson ? JSON.parse(current.faqJson) : []);
+  const sectionStyles = body.sectionStyles !== undefined || body.sectionStylesJson !== undefined
+    ? parseSectionStyles(body.sectionStyles ?? body.sectionStylesJson ?? "{}")
+    : (current?.sectionStylesJson ? JSON.parse(current.sectionStylesJson) : {});
+  const sectionOrder = body.sectionOrder !== undefined || body.sectionOrderJson !== undefined
+    ? parseSectionOrder(body.sectionOrder ?? body.sectionOrderJson ?? "[]")
+    : (current?.sectionOrderJson ? JSON.parse(current.sectionOrderJson) : []);
 
   return {
-    inviteTheme: parseInviteTheme(body.inviteTheme),
-    openingText: clipText(body.openingText, 160, DEFAULT_OPENING_TEXT),
-    romanticLine: clipText(body.romanticLine, 240),
-    coverPhotoUrl: httpsUrlOrEmpty(body.coverPhotoUrl, "A foto de capa"),
-    videoUrl: httpsUrlOrEmpty(body.videoUrl, "O link de vídeo"),
+    inviteTheme: body.inviteTheme !== undefined ? parseInviteTheme(body.inviteTheme) : (current?.inviteTheme ? parseInviteTheme(current.inviteTheme) : "romantico"),
+    openingText: body.openingText !== undefined ? clipText(body.openingText, 160, DEFAULT_OPENING_TEXT) : (current?.openingText ?? DEFAULT_OPENING_TEXT),
+    romanticLine: body.romanticLine !== undefined ? clipText(body.romanticLine, 240) : (current?.romanticLine ?? ""),
+    coverPhotoUrl: body.coverPhotoUrl !== undefined ? httpsUrlOrEmpty(body.coverPhotoUrl, "A foto de capa") : (current?.coverPhotoUrl ?? ""),
+    videoUrl: body.videoUrl !== undefined ? httpsUrlOrEmpty(body.videoUrl, "O link de vídeo") : (current?.videoUrl ?? ""),
     galleryJson: JSON.stringify(gallery),
     scheduleJson: JSON.stringify(schedule),
     menuJson: JSON.stringify(menu),
@@ -732,27 +752,35 @@ export function parseInviteSettings(body: Record<string, unknown>): InviteSettin
     faqJson: JSON.stringify(faq),
     sectionStylesJson: JSON.stringify(sectionStyles),
     sectionOrderJson: JSON.stringify(sectionOrder),
-    ceremonyNotes: String(body.ceremonyNotes ?? "").trim().slice(0, 500),
-    receptionNotes: String(body.receptionNotes ?? "").trim().slice(0, 500),
-    extraInfo: String(body.extraInfo ?? "").trim().slice(0, 800),
-    rsvpText: clipText(body.rsvpText, 400, DEFAULT_RSVP_TEXT),
-    showStory: flag(body.showStory, true),
-    showGallery: flag(body.showGallery, true),
-    showSchedule: flag(body.showSchedule, true),
-    showDress: flag(body.showDress, true),
-    showGifts: flag(body.showGifts, true),
-    showVideo: flag(body.showVideo, false),
-    showMenu: flag(body.showMenu, false),
-    showGroomsmen: flag(body.showGroomsmen, false),
-    showQuiz: flag(body.showQuiz, false),
-    showHotels: flag(body.showHotels, false),
-    showCityGuide: flag(body.showCityGuide, false),
-    showFaq: flag(body.showFaq, false),
-    showGuestAlbum: flag(body.showGuestAlbum, false),
-    inviteTemplate: String(body.inviteTemplate ?? "").trim().slice(0, 1500) || DEFAULT_INVITE_TEMPLATE,
-    saveTheDateTemplate: String(body.saveTheDateTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SAVE_THE_DATE_TEMPLATE,
-    reminderTemplate: String(body.reminderTemplate ?? "").trim().slice(0, 1500) || DEFAULT_REMINDER_TEMPLATE,
-    soonTemplate: String(body.soonTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SOON_TEMPLATE,
+    ceremonyNotes: body.ceremonyNotes !== undefined ? String(body.ceremonyNotes ?? "").trim().slice(0, 500) : (current?.ceremonyNotes ?? ""),
+    receptionNotes: body.receptionNotes !== undefined ? String(body.receptionNotes ?? "").trim().slice(0, 500) : (current?.receptionNotes ?? ""),
+    extraInfo: body.extraInfo !== undefined ? String(body.extraInfo ?? "").trim().slice(0, 800) : (current?.extraInfo ?? ""),
+    rsvpText: body.rsvpText !== undefined ? clipText(body.rsvpText, 400, DEFAULT_RSVP_TEXT) : (current?.rsvpText ?? DEFAULT_RSVP_TEXT),
+    showStory: body.showStory !== undefined ? flag(body.showStory, true) : (current?.showStory ?? true),
+    showGallery: body.showGallery !== undefined ? flag(body.showGallery, true) : (current?.showGallery ?? true),
+    showSchedule: body.showSchedule !== undefined ? flag(body.showSchedule, true) : (current?.showSchedule ?? true),
+    showDress: body.showDress !== undefined ? flag(body.showDress, true) : (current?.showDress ?? true),
+    showGifts: body.showGifts !== undefined ? flag(body.showGifts, true) : (current?.showGifts ?? true),
+    showVideo: body.showVideo !== undefined ? flag(body.showVideo, false) : (current?.showVideo ?? false),
+    showMenu: body.showMenu !== undefined ? flag(body.showMenu, false) : (current?.showMenu ?? false),
+    showGroomsmen: body.showGroomsmen !== undefined ? flag(body.showGroomsmen, false) : (current?.showGroomsmen ?? false),
+    showQuiz: body.showQuiz !== undefined ? flag(body.showQuiz, false) : (current?.showQuiz ?? false),
+    showHotels: body.showHotels !== undefined ? flag(body.showHotels, false) : (current?.showHotels ?? false),
+    showCityGuide: body.showCityGuide !== undefined ? flag(body.showCityGuide, false) : (current?.showCityGuide ?? false),
+    showFaq: body.showFaq !== undefined ? flag(body.showFaq, false) : (current?.showFaq ?? false),
+    showGuestAlbum: body.showGuestAlbum !== undefined ? flag(body.showGuestAlbum, false) : (current?.showGuestAlbum ?? false),
+    inviteTemplate: body.inviteTemplate !== undefined
+      ? (String(body.inviteTemplate ?? "").trim().slice(0, 1500) || DEFAULT_INVITE_TEMPLATE)
+      : (current?.inviteTemplate ?? DEFAULT_INVITE_TEMPLATE),
+    saveTheDateTemplate: body.saveTheDateTemplate !== undefined
+      ? (String(body.saveTheDateTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SAVE_THE_DATE_TEMPLATE)
+      : (current?.saveTheDateTemplate ?? DEFAULT_SAVE_THE_DATE_TEMPLATE),
+    reminderTemplate: body.reminderTemplate !== undefined
+      ? (String(body.reminderTemplate ?? "").trim().slice(0, 1500) || DEFAULT_REMINDER_TEMPLATE)
+      : (current?.reminderTemplate ?? DEFAULT_REMINDER_TEMPLATE),
+    soonTemplate: body.soonTemplate !== undefined
+      ? (String(body.soonTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SOON_TEMPLATE)
+      : (current?.soonTemplate ?? DEFAULT_SOON_TEMPLATE),
   };
 }
 
