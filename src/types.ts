@@ -51,4 +51,23 @@ export interface SettingsData {
   rsvpDeadline?: string;
   dressCode?: string;
   coupleStory?: string;
+  inviteTheme?: string;
+  openingText?: string;
+  romanticLine?: string;
+  coverPhotoUrl?: string;
+  galleryJson?: string;
+  scheduleJson?: string;
+  ceremonyNotes?: string;
+  receptionNotes?: string;
+  extraInfo?: string;
+  rsvpText?: string;
+  showStory?: boolean;
+  showGallery?: boolean;
+  showSchedule?: boolean;
+  showDress?: boolean;
+  showGifts?: boolean;
+  inviteTemplate?: string;
+  saveTheDateTemplate?: string;
+  reminderTemplate?: string;
+  soonTemplate?: string;
 }

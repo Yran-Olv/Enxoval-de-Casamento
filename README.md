@@ -280,6 +280,9 @@ Abrir: `http://localhost:3000`
 - Compartilhar copia ou envia a URL real do navegador (`origem/convite`).
 - O site toca uma música padrão. Em Configurações → Geral / PIX dá para enviar outra faixa (MP3, WAV, M4A, OGG ou WEBM, até 12 MB) ou voltar para a padrão. O arquivo enviado fica na pasta `uploads/` do servidor.
 - Os endereços geram links do Google Maps. O Google Agenda usa o horário de parede em `America/Sao_Paulo`, sem converter a cerimônia para UTC.
+- O convite abre com um envelope. Em Configurações → Convite dá para escolher o estilo, os textos, a programação, as fotos por link HTTPS e as mensagens. A pré-visualização (`/convite?preview=1`) não grava respostas.
+- Cada convidado da aba **Convidados** recebe um link `/c/…` com token aleatório. O RSVP desse link respeita a quantidade de pessoas autorizada. O envio reutiliza o Whaticket já configurado e manda só texto: a API atual não envia imagem. “Enviado ao provedor” significa que o Whaticket aceitou a mensagem; entrega e leitura não são informadas. Quem estiver marcado para não receber fica de fora, e o mesmo pedido não é disparado duas vezes.
+- Para publicar esta versão: `npm run db:migrate:deploy` (ou o entrypoint do Docker) aplica a migração `20261015163000_invite_guests` sem apagar os dados atuais.
 - O casal pode apagar uma resposta no painel. As confirmações entram no backup JSON. Faça um backup antes de importar outro arquivo: a importação substitui os dados atuais.
 - Reservar um presente não significa que o PIX foi pago. O aviso de PIX só registra a intenção enviada pelo convidado.
 

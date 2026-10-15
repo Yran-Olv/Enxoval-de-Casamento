@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { mkdir, readdir, stat, unlink, writeFile } from "fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "fs/promises";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -18,13 +18,19 @@ import {
   assertHttpsApiUrl,
   createRateLimiter,
   detectAudio,
+  isInviteToken,
+  isRequestId,
   isRsvpClosed,
   parseCeremonyTime,
   parseIsoDate,
+  parseGuestWrite,
+  parseInviteSettings,
   parseRegistryWrite,
   parseReservationInput,
   parseRsvpInput,
+  readInviteContent,
 } from "./server/domain";
+import { registerInviteRoutes } from "./server/inviteRoutes";
 
 dotenv.config();
 applyDatabaseUrlToEnv();
@@ -62,6 +68,8 @@ const allowLogin = createRateLimiter(8, 15 * 60 * 1000);
 const allowRsvp = createRateLimiter(6, 10 * 60 * 1000);
 const allowReservation = createRateLimiter(8, 10 * 60 * 1000);
 const allowPix = createRateLimiter(5, 10 * 60 * 1000);
+const allowInviteRead = createRateLimiter(40, 10 * 60 * 1000);
+const allowInviteSend = createRateLimiter(12, 10 * 60 * 1000);
 
 function clientIp(req: { ip?: string; socket?: { remoteAddress?: string } }) {
   return req.ip || req.socket?.remoteAddress || "unknown";
@@ -79,11 +87,14 @@ const allowedOrigins = new Set<string>([
   "https://localhost",
 ]);
 if (process.env.NODE_ENV !== "production") {
+  const devPort = process.env.PORT || "3000";
   [
     "http://localhost:3000",
     "http://localhost:5173",
+    `http://localhost:${devPort}`,
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    `http://127.0.0.1:${devPort}`,
   ].forEach((origin) => allowedOrigins.add(origin));
 }
 if (process.env.APP_URL) {
@@ -199,6 +210,7 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const rsvpDeadline = parseIsoDate(body.rsvpDeadline, "");
   const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   const coupleStory = String(body.coupleStory ?? "").trim().slice(0, 2000);
+  const invite = parseInviteSettings(body);
   return {
     pixKey,
     pixName,
@@ -223,6 +235,7 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     rsvpDeadline,
     dressCode,
     coupleStory,
+    ...invite,
   };
 }
 
@@ -558,6 +571,15 @@ const authenticate = (req: any, res: any, next: any) => {
   }
 };
 
+registerInviteRoutes(app, {
+  prisma,
+  authenticate,
+  clientIp,
+  allowInviteRead,
+  allowInviteSend,
+  buildWhaticketOptionalIds,
+});
+
 // --- API Routes ---
 
 // Auth
@@ -794,23 +816,52 @@ app.post("/api/rsvp", async (req, res) => {
     return res.status(429).json({ error: "Muitas confirmações em pouco tempo. Aguarde alguns minutos." });
   }
   try {
-    const input = parseRsvpInput(req.body ?? {});
+    const token = String(req.body?.inviteToken ?? "").trim();
+    let invited: { id: string; name: string; whatsapp: string; seats: number } | null = null;
+    if (token) {
+      if (!isInviteToken(token)) return res.status(404).json({ error: "Convite não encontrado." });
+      invited = await prisma.weddingGuest.findUnique({
+        where: { token },
+        select: { id: true, name: true, whatsapp: true, seats: true },
+      });
+      if (!invited) return res.status(404).json({ error: "Convite não encontrado." });
+    }
+    const input = parseRsvpInput(
+      invited
+        ? { ...req.body, name: String(req.body?.name || invited.name), whatsapp: invited.whatsapp }
+        : (req.body ?? {}),
+      invited ? { maxGuests: invited.seats } : undefined,
+    );
     const settings = await prisma.settings.findUnique({ where: { id: "global" } });
     if (settings && isRsvpClosed(settings.rsvpDeadline)) {
       return res.status(403).json({ error: "O prazo para confirmar presença já encerrou." });
     }
 
     const select = { id: true, attending: true, guests: true } as const;
-    const existing = await prisma.weddingRsvp.findUnique({ where: { whatsapp: input.whatsapp }, select: { id: true } });
+    const byGuest = invited
+      ? await prisma.weddingRsvp.findUnique({ where: { guestId: invited.id }, select: { id: true, whatsapp: true } })
+      : null;
+    const byPhone = await prisma.weddingRsvp.findUnique({ where: { whatsapp: input.whatsapp }, select: { id: true } });
+    if (byGuest && byPhone && byGuest.id !== byPhone.id) {
+      return res.status(409).json({ error: "Já existe outra confirmação com este WhatsApp." });
+    }
+    const existing = byGuest || byPhone;
+    const data = { ...input, ...(invited ? { guestId: invited.id } : {}) };
     try {
       const rsvp = existing
-        ? await prisma.weddingRsvp.update({ where: { whatsapp: input.whatsapp }, data: input, select })
-        : await prisma.weddingRsvp.create({ data: input, select });
+        ? await prisma.weddingRsvp.update({ where: { id: existing.id }, data, select })
+        : await prisma.weddingRsvp.create({ data, select });
+      if (!invited) {
+        const matched = await prisma.weddingGuest.findUnique({ where: { whatsapp: input.whatsapp }, select: { id: true } });
+        if (matched) {
+          await prisma.weddingRsvp.update({ where: { id: rsvp.id }, data: { guestId: matched.id } }).catch(() => undefined);
+        }
+      }
       return res.status(existing ? 200 : 201).json({ success: true, updated: Boolean(existing), rsvp });
     } catch (err) {
       const duplicate = err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002";
       if (!duplicate) throw err;
-      const rsvp = await prisma.weddingRsvp.update({ where: { whatsapp: input.whatsapp }, data: input, select });
+      const rsvp = await prisma.weddingRsvp.update({ where: { whatsapp: input.whatsapp }, data, select });
       return res.status(200).json({ success: true, updated: true, rsvp });
     }
   } catch (err) {
@@ -823,7 +874,11 @@ app.post("/api/rsvp", async (req, res) => {
 app.get("/api/rsvps", authenticate, async (_req, res) => {
   try {
     const [items, total, attendingResponses, declined, guestSum] = await Promise.all([
-      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
+      prisma.weddingRsvp.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: { guest: { select: { id: true, name: true, groupName: true } } },
+      }),
       prisma.weddingRsvp.count(),
       prisma.weddingRsvp.count({ where: { attending: true } }),
       prisma.weddingRsvp.count({ where: { attending: false } }),
@@ -1107,6 +1162,7 @@ app.get("/api/settings", async (req, res) => {
     rsvpDeadline: settings.rsvpDeadline,
     dressCode: settings.dressCode,
     coupleStory: settings.coupleStory,
+    ...readInviteContent(settings),
   });
 });
 
@@ -1120,13 +1176,15 @@ app.get("/api/settings/admin", authenticate, async (req, res) => {
 
 app.get("/api/backup/export", authenticate, async (req, res) => {
   try {
-    const [users, registry, purchased, reservations, settings, rsvps] = await Promise.all([
+    const [users, registry, purchased, reservations, settings, rsvps, guests, inviteAttempts] = await Promise.all([
       prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.enxovalItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.purchasedItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.reservation.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.settings.findUnique({ where: { id: "global" } }),
       prisma.weddingRsvp.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.weddingGuest.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.weddingInviteAttempt.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
     const backup = {
@@ -1140,6 +1198,8 @@ app.get("/api/backup/export", authenticate, async (req, res) => {
         reservations,
         settings,
         rsvps,
+        guests,
+        inviteAttempts,
       },
     };
 
@@ -1180,10 +1240,14 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
     const purchased = Array.isArray(data.purchased) ? data.purchased : [];
     const reservations = Array.isArray(data.reservations) ? data.reservations : [];
     const rsvps = Array.isArray(data.rsvps) ? data.rsvps : [];
+    const guests = Array.isArray(data.guests) ? data.guests : [];
+    const inviteAttempts = Array.isArray(data.inviteAttempts) ? data.inviteAttempts : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings : null;
 
     await prisma.$transaction(async (tx) => {
+      await tx.weddingInviteAttempt.deleteMany({});
       await tx.weddingRsvp.deleteMany({});
+      await tx.weddingGuest.deleteMany({});
       await tx.reservation.deleteMany({});
       await tx.purchasedItem.deleteMany({});
       await tx.enxovalItem.deleteMany({});
@@ -1217,6 +1281,13 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             rsvpDeadline: String(settings.rsvpDeadline ?? ""),
             dressCode: String(settings.dressCode ?? ""),
             coupleStory: String(settings.coupleStory ?? "").slice(0, 2000),
+            ...(() => {
+              try {
+                return parseInviteSettings(settings);
+              } catch {
+                return {};
+              }
+            })(),
           },
         });
       } else {
@@ -1277,6 +1348,34 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
         });
       }
 
+      const guestIds = new Set<string>();
+      if (guests.length > 0) {
+        const guestRows = guests.flatMap((guest: any) => {
+          try {
+            const parsed = parseGuestWrite(guest);
+            const token = String(guest.token ?? "");
+            if (!isInviteToken(token)) return [];
+            const id = String(guest.id);
+            guestIds.add(id);
+            return [{
+              id,
+              token,
+              ...parsed,
+              status: ["pending", "sending", "sent", "failed"].includes(String(guest.status)) ? String(guest.status) : "pending",
+              lastError: String(guest.lastError ?? "").slice(0, 300),
+              attemptCount: Math.max(0, Number(guest.attemptCount ?? 0) || 0),
+              lastRequestId: isRequestId(guest.lastRequestId) ? String(guest.lastRequestId) : "",
+              sentAt: guest.sentAt ? new Date(guest.sentAt) : null,
+              lastAttemptAt: guest.lastAttemptAt ? new Date(guest.lastAttemptAt) : null,
+              createdAt: guest.createdAt ? new Date(guest.createdAt) : new Date(),
+            }];
+          } catch {
+            return [];
+          }
+        });
+        if (guestRows.length > 0) await tx.weddingGuest.createMany({ data: guestRows });
+      }
+
       const rsvpByPhone = new Map<string, any>();
       for (const entry of rsvps) {
         const phone = String(entry?.whatsapp ?? "").replace(/\D/g, "");
@@ -1289,14 +1388,31 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             id: String(r.id),
             name: String(r.name ?? "Convidado").slice(0, 120),
             whatsapp: String(r.whatsapp ?? "").replace(/\D/g, ""),
-            guests: Math.max(0, Math.min(6, Number(r.guests ?? 0))),
+            guests: Math.max(0, Math.min(12, Number(r.guests ?? 0))),
             attending: Boolean(r.attending),
             message: r.message ? String(r.message).slice(0, 1000) : null,
+            guestId: guestIds.has(String(r.guestId ?? "")) ? String(r.guestId) : null,
             createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
             updatedAt: r.updatedAt ? new Date(r.updatedAt) : new Date(),
           })),
         });
       }
+
+      const attemptRows = inviteAttempts.flatMap((attempt: any) => {
+        const guestId = String(attempt?.guestId ?? "");
+        if (!guestIds.has(guestId)) return [];
+        const status = String(attempt?.status ?? "");
+        if (status !== "sent" && status !== "failed") return [];
+        return [{
+          id: String(attempt.id),
+          guestId,
+          campaign: String(attempt.campaign ?? "official").slice(0, 40),
+          status,
+          requestId: isRequestId(attempt.requestId) ? String(attempt.requestId) : "",
+          createdAt: attempt.createdAt ? new Date(attempt.createdAt) : new Date(),
+        }];
+      });
+      if (attemptRows.length > 0) await tx.weddingInviteAttempt.createMany({ data: attemptRows });
     });
 
     return res.json({ success: true });

@@ -67,7 +67,8 @@ export type RsvpInput = {
   message: string | null;
 };
 
-export function parseRsvpInput(body: Record<string, unknown>): RsvpInput {
+export function parseRsvpInput(body: Record<string, unknown>, options?: { maxGuests?: number }): RsvpInput {
+  const maxGuests = options?.maxGuests ?? 6;
   const name = String(body.name ?? "").trim().slice(0, 120);
   const whatsapp = digitsOnly(body.whatsapp);
   if (!name) throw new InputError("Informe seu nome.");
@@ -79,8 +80,12 @@ export function parseRsvpInput(body: Record<string, unknown>): RsvpInput {
   }
   const attending = body.attending;
   const guests = attending ? Number(body.guests ?? 1) : 0;
-  if (attending && (!Number.isInteger(guests) || guests < 1 || guests > 6)) {
-    throw new InputError("A quantidade de pessoas deve ser entre 1 e 6.");
+  if (attending && (!Number.isInteger(guests) || guests < 1 || guests > maxGuests)) {
+    throw new InputError(
+      maxGuests === 6
+        ? "A quantidade de pessoas deve ser entre 1 e 6."
+        : `Este convite permite no máximo ${maxGuests} ${maxGuests === 1 ? "pessoa" : "pessoas"}.`,
+    );
   }
   const messageRaw = String(body.message ?? "").trim().slice(0, 1000);
   return { name, whatsapp, attending, guests, message: messageRaw || null };
@@ -253,6 +258,392 @@ export function detectAudio(buf: Buffer): { ext: string; mime: string } | null {
   if (!Buffer.isBuffer(buf) || buf.length < 1024 || buf.length > 12 * 1024 * 1024) return null;
   const match = AUDIO_SIGNATURES.find((item) => item.test(buf));
   return match ? { ext: match.ext, mime: match.mime } : null;
+}
+
+export const INVITE_THEMES = ["classico", "jardim", "editorial", "boho", "gala"] as const;
+export type InviteTheme = (typeof INVITE_THEMES)[number];
+export const INVITE_CAMPAIGNS = ["official", "save-the-date", "reminder", "soon"] as const;
+export type InviteCampaign = (typeof INVITE_CAMPAIGNS)[number];
+export const GUEST_GROUPS = ["familia", "amigos", "padrinhos", "outros"] as const;
+
+export const DEFAULT_OPENING_TEXT = "Você recebeu um convite especial";
+export const DEFAULT_RSVP_TEXT = "Sua presença é o presente mais importante. Conte se poderemos comemorar juntos.";
+export const DEFAULT_INVITE_TEMPLATE =
+  "Olá, {nome}! ❤️\n\nPreparamos um convite muito especial para você.\n\nNós vamos nos casar e ficaremos muito felizes em compartilhar esse momento com você!\n\n📅 Data: {data}\n🕒 Horário: {horario}\n\nAbra seu convite especial:\n{link}\n\nEsperamos você! Com carinho, {casal}.";
+export const DEFAULT_SAVE_THE_DATE_TEMPLATE =
+  "Olá, {nome}! Guarde esta data com carinho.\n\n📅 {data}, às {horario}\n\n{casal} vão se casar. O convite completo está aqui:\n{link}";
+export const DEFAULT_REMINDER_TEMPLATE =
+  "Olá, {nome}! Ainda não recebemos sua resposta para o casamento de {casal}.\n\n📅 {data} às {horario}\n\nAbra o convite e confirme sua presença:\n{link}";
+export const DEFAULT_SOON_TEMPLATE =
+  "Olá, {nome}! O casamento de {casal} está chegando.\n\n📅 {data} às {horario}\n\nVeja os detalhes no seu convite:\n{link}";
+
+export const INVITE_PALETTES: Record<InviteTheme, {
+  label: string;
+  bg: string;
+  paper: string;
+  ink: string;
+  accent: string;
+  seal: string;
+  muted: string;
+  line: string;
+  onAccent: string;
+}> = {
+  classico: { label: "Romântico clássico", bg: "#f6f0e7", paper: "#fffdf9", ink: "#3f332b", accent: "#7d6244", seal: "#6f5438", muted: "#7d6d5e", line: "#eadfd2", onAccent: "#fffaf4" },
+  jardim: { label: "Jardim botânico", bg: "#eef3ee", paper: "#fbfdfb", ink: "#243128", accent: "#3f6b4e", seal: "#2f5a40", muted: "#5d6f62", line: "#d5e3d8", onAccent: "#f7fbf7" },
+  editorial: { label: "Minimalista editorial", bg: "#f4f4f2", paper: "#ffffff", ink: "#161616", accent: "#111111", seal: "#111111", muted: "#5c5c5c", line: "#e4e4e4", onAccent: "#ffffff" },
+  boho: { label: "Boho elegante", bg: "#f8f1e8", paper: "#fffaf5", ink: "#4a3328", accent: "#a15c38", seal: "#8d4d2e", muted: "#8a6d5b", line: "#eddccb", onAccent: "#fff8f3" },
+  gala: { label: "Noite de gala", bg: "#141318", paper: "#211e26", ink: "#f4ecdf", accent: "#c6a36a", seal: "#c6a36a", muted: "#b7ab9c", line: "#3a3442", onAccent: "#1a140c" },
+};
+
+const CAMPAIGN_FIELD: Record<InviteCampaign, "inviteTemplate" | "saveTheDateTemplate" | "reminderTemplate" | "soonTemplate"> = {
+  official: "inviteTemplate",
+  "save-the-date": "saveTheDateTemplate",
+  reminder: "reminderTemplate",
+  soon: "soonTemplate",
+};
+
+export function parseInviteTheme(value: unknown): InviteTheme {
+  const raw = String(value ?? "").trim();
+  return INVITE_THEMES.includes(raw as InviteTheme) ? (raw as InviteTheme) : "classico";
+}
+
+export function parseInviteCampaign(value: unknown): InviteCampaign {
+  const raw = String(value ?? "").trim();
+  if (!INVITE_CAMPAIGNS.includes(raw as InviteCampaign)) {
+    throw new InputError("Escolha o tipo de mensagem antes de enviar.");
+  }
+  return raw as InviteCampaign;
+}
+
+export function isInviteToken(value: unknown): boolean {
+  return /^[A-Za-z0-9_-]{22,80}$/.test(String(value ?? ""));
+}
+
+export function createInviteToken(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+export function normalizeWhatsappNumber(raw: unknown): string {
+  const digits = digitsOnly(raw);
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) return digits;
+  throw new InputError("Informe o WhatsApp com DDD. Ex.: 34999998888 ou 5534999998888.");
+}
+
+export function coupleInitials(coupleNames: string): string {
+  const parts = coupleNames.split(/\s*(?:&|e)\s*/i).map((part) => part.trim()).filter(Boolean);
+  const letters = (parts.length >= 2 ? parts.slice(0, 2) : coupleNames.trim().split(/\s+/).slice(0, 2))
+    .map((part) => part.charAt(0).toLocaleUpperCase("pt-BR"))
+    .join(" & ");
+  return letters || "T & Y";
+}
+
+function clipText(value: unknown, max: number, fallback = ""): string {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return (text || fallback).slice(0, max);
+}
+
+function httpsUrlOrEmpty(value: unknown, label: string): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new InputError(`${label} precisa ser um link HTTPS.`);
+  }
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new InputError(`${label} precisa ser um link HTTPS.`);
+  }
+  return url.toString().slice(0, 500);
+}
+
+export type GalleryItem = { url: string; alt: string };
+export type ScheduleItem = { time: string; title: string; detail: string };
+
+export function parseGallery(value: unknown): GalleryItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      throw new InputError("A galeria de fotos está em um formato inválido.");
+    }
+  }
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new InputError("A galeria de fotos está em um formato inválido.");
+  return raw.slice(0, 8).flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const url = httpsUrlOrEmpty(record.url, "Cada foto");
+    if (!url) return [];
+    return [{ url, alt: clipText(record.alt, 80) }];
+  });
+}
+
+export function parseSchedule(value: unknown): ScheduleItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      throw new InputError("A programação está em um formato inválido.");
+    }
+  }
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new InputError("A programação está em um formato inválido.");
+  return raw.slice(0, 12).flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const title = clipText(record.title, 80);
+    if (!title) return [];
+    return [{ time: parseCeremonyTime(record.time), title, detail: clipText(record.detail, 180) }];
+  });
+}
+
+function flag(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === "1") return true;
+  if (value === "false" || value === "0") return false;
+  return fallback;
+}
+
+export type InviteSettings = {
+  inviteTheme: InviteTheme;
+  openingText: string;
+  romanticLine: string;
+  coverPhotoUrl: string;
+  galleryJson: string;
+  scheduleJson: string;
+  ceremonyNotes: string;
+  receptionNotes: string;
+  extraInfo: string;
+  rsvpText: string;
+  showStory: boolean;
+  showGallery: boolean;
+  showSchedule: boolean;
+  showDress: boolean;
+  showGifts: boolean;
+  inviteTemplate: string;
+  saveTheDateTemplate: string;
+  reminderTemplate: string;
+  soonTemplate: string;
+};
+
+export function parseInviteSettings(body: Record<string, unknown>): InviteSettings {
+  const gallery = parseGallery(body.gallery ?? body.galleryJson ?? "[]");
+  const schedule = parseSchedule(body.schedule ?? body.scheduleJson ?? "[]");
+  return {
+    inviteTheme: parseInviteTheme(body.inviteTheme),
+    openingText: clipText(body.openingText, 160, DEFAULT_OPENING_TEXT),
+    romanticLine: clipText(body.romanticLine, 240),
+    coverPhotoUrl: httpsUrlOrEmpty(body.coverPhotoUrl, "A foto de capa"),
+    galleryJson: JSON.stringify(gallery),
+    scheduleJson: JSON.stringify(schedule),
+    ceremonyNotes: String(body.ceremonyNotes ?? "").trim().slice(0, 500),
+    receptionNotes: String(body.receptionNotes ?? "").trim().slice(0, 500),
+    extraInfo: String(body.extraInfo ?? "").trim().slice(0, 800),
+    rsvpText: clipText(body.rsvpText, 400, DEFAULT_RSVP_TEXT),
+    showStory: flag(body.showStory, true),
+    showGallery: flag(body.showGallery, true),
+    showSchedule: flag(body.showSchedule, true),
+    showDress: flag(body.showDress, true),
+    showGifts: flag(body.showGifts, true),
+    inviteTemplate: String(body.inviteTemplate ?? "").trim().slice(0, 1500) || DEFAULT_INVITE_TEMPLATE,
+    saveTheDateTemplate: String(body.saveTheDateTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SAVE_THE_DATE_TEMPLATE,
+    reminderTemplate: String(body.reminderTemplate ?? "").trim().slice(0, 1500) || DEFAULT_REMINDER_TEMPLATE,
+    soonTemplate: String(body.soonTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SOON_TEMPLATE,
+  };
+}
+
+export function readInviteContent(settings: (Partial<Omit<InviteSettings, "inviteTheme">> & { inviteTheme?: string; gallery?: unknown; schedule?: unknown }) | null | undefined) {
+  let gallery: GalleryItem[] = [];
+  let schedule: ScheduleItem[] = [];
+  const gallerySource = typeof settings?.galleryJson === "string" ? settings.galleryJson : settings?.gallery ?? "[]";
+  const scheduleSource = typeof settings?.scheduleJson === "string" ? settings.scheduleJson : settings?.schedule ?? "[]";
+  try {
+    gallery = parseGallery(gallerySource);
+  } catch {
+    gallery = [];
+  }
+  try {
+    schedule = parseSchedule(scheduleSource);
+  } catch {
+    schedule = [];
+  }
+  return {
+    inviteTheme: parseInviteTheme(settings?.inviteTheme),
+    openingText: settings?.openingText || DEFAULT_OPENING_TEXT,
+    romanticLine: settings?.romanticLine || "",
+    coverPhotoUrl: settings?.coverPhotoUrl || "",
+    gallery,
+    schedule,
+    ceremonyNotes: settings?.ceremonyNotes || "",
+    receptionNotes: settings?.receptionNotes || "",
+    extraInfo: settings?.extraInfo || "",
+    rsvpText: settings?.rsvpText || DEFAULT_RSVP_TEXT,
+    showStory: settings?.showStory !== false,
+    showGallery: settings?.showGallery !== false,
+    showSchedule: settings?.showSchedule !== false,
+    showDress: settings?.showDress !== false,
+    showGifts: settings?.showGifts !== false,
+  };
+}
+
+export function campaignTemplate(settings: Partial<Record<(typeof CAMPAIGN_FIELD)[InviteCampaign], string>>, campaign: InviteCampaign): string {
+  const field = CAMPAIGN_FIELD[campaign];
+  const value = String(settings[field] ?? "").trim();
+  if (campaign === "official") return value || DEFAULT_INVITE_TEMPLATE;
+  if (campaign === "save-the-date") return value || DEFAULT_SAVE_THE_DATE_TEMPLATE;
+  if (campaign === "reminder") return value || DEFAULT_REMINDER_TEMPLATE;
+  return value || DEFAULT_SOON_TEMPLATE;
+}
+
+export function renderInviteMessage(template: string, vars: {
+  nome: string;
+  data: string;
+  horario: string;
+  link: string;
+  casal: string;
+  local: string;
+}): string {
+  const clean = (value: string) => value.replace(/[\u0000-\u001F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+  const values: Record<string, string> = {
+    nome: clean(vars.nome) || "convidado",
+    data: clean(vars.data),
+    horario: clean(vars.horario),
+    link: clean(vars.link),
+    link_convite: clean(vars.link),
+    casal: clean(vars.casal) || "o casal",
+    nomes_do_casal: clean(vars.casal) || "o casal",
+    local: clean(vars.local),
+  };
+  let text = String(template ?? "");
+  for (const [key, value] of Object.entries(values)) {
+    text = text.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}|\\{\\s*${key}\\s*\\}`, "gi"), value);
+  }
+  text = text.trim().slice(0, 1500);
+  if (!text) throw new InputError("A mensagem do convite está vazia.");
+  return text;
+}
+
+export type GuestWrite = {
+  name: string;
+  whatsapp: string;
+  groupName: (typeof GUEST_GROUPS)[number];
+  seats: number;
+  notes: string;
+  optedOut: boolean;
+};
+
+export function parseGuestWrite(body: Record<string, unknown>): GuestWrite {
+  const name = String(body.name ?? "").trim().slice(0, 120);
+  if (!name) throw new InputError("Informe o nome do convidado ou da família.");
+  const groupName = String(body.groupName ?? "amigos").trim();
+  if (!GUEST_GROUPS.includes(groupName as GuestWrite["groupName"])) {
+    throw new InputError("Escolha um grupo: família, amigos, padrinhos ou outros.");
+  }
+  const seats = Number(body.seats ?? 1);
+  if (!Number.isInteger(seats) || seats < 1 || seats > 12) {
+    throw new InputError("A quantidade autorizada deve ser entre 1 e 12 pessoas.");
+  }
+  return {
+    name,
+    whatsapp: normalizeWhatsappNumber(body.whatsapp),
+    groupName: groupName as GuestWrite["groupName"],
+    seats,
+    notes: String(body.notes ?? "").trim().slice(0, 500),
+    optedOut: flag(body.optedOut, false),
+  };
+}
+
+export function isRequestId(value: unknown): boolean {
+  return /^[A-Za-z0-9_-]{8,80}$/.test(String(value ?? ""));
+}
+
+export type SendDecision =
+  | { action: "return"; status: "sent" | "failed" | "skipped"; duplicate?: boolean; reason?: string }
+  | { action: "send" };
+
+export function decideInviteSend(guest: {
+  optedOut: boolean;
+  status: string;
+  lastRequestId: string;
+  lastAttemptAt: Date | null;
+}, input: { requestId: string; force: boolean; now: Date }): SendDecision {
+  if (guest.optedOut) return { action: "return", status: "skipped", reason: "pediu para não receber" };
+  if (guest.lastRequestId && guest.lastRequestId === input.requestId) {
+    if (guest.status === "sent") return { action: "return", status: "sent", duplicate: true };
+    if (guest.status === "failed") return { action: "return", status: "failed", duplicate: true };
+    return { action: "return", status: "skipped", duplicate: true, reason: "envio já em andamento" };
+  }
+  if (!input.force && guest.status === "sent") return { action: "return", status: "skipped", reason: "já enviado ao provedor" };
+  if (guest.status === "sending" && guest.lastAttemptAt && input.now.getTime() - guest.lastAttemptAt.getTime() < 60_000) {
+    return { action: "return", status: "skipped", reason: "envio já em andamento" };
+  }
+  return { action: "send" };
+}
+
+export function inviteStatusLabel(status: string): string {
+  if (status === "sending") return "Enfileirado";
+  if (status === "sent") return "Enviado ao provedor";
+  if (status === "failed") return "Falhou";
+  if (status === "skipped") return "Não enviado";
+  return "Pendente";
+}
+
+export function xmlEscape(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+export function buildInviteArtSvg(input: {
+  coupleNames: string;
+  dateLabel: string;
+  time: string;
+  venue: string;
+  guestName?: string;
+  theme: InviteTheme;
+}): string {
+  const palette = INVITE_PALETTES[parseInviteTheme(input.theme)];
+  const guest = input.guestName?.trim() ? xmlEscape(input.guestName.trim().slice(0, 80)) : "";
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="${palette.bg}"/>
+  <rect x="70" y="70" width="940" height="1210" rx="36" fill="${palette.paper}" stroke="${palette.line}" stroke-width="2"/>
+  <text x="540" y="220" text-anchor="middle" fill="${palette.accent}" font-family="Georgia, serif" font-size="34">${xmlEscape(palette.label)}</text>
+  <text x="540" y="430" text-anchor="middle" fill="${palette.ink}" font-family="Georgia, serif" font-size="84">${xmlEscape(input.coupleNames.slice(0, 48) || "Nosso casamento")}</text>
+  <text x="540" y="560" text-anchor="middle" fill="${palette.muted}" font-family="Georgia, serif" font-size="36">${xmlEscape(input.dateLabel.slice(0, 60))}</text>
+  <text x="540" y="630" text-anchor="middle" fill="${palette.muted}" font-family="Georgia, serif" font-size="32">${xmlEscape(input.time.slice(0, 8))} · ${xmlEscape(input.venue.slice(0, 48) || "Local a confirmar")}</text>
+  ${guest ? `<text x="540" y="820" text-anchor="middle" fill="${palette.ink}" font-family="Georgia, serif" font-size="42">Para ${guest}</text>` : ""}
+  <text x="540" y="1120" text-anchor="middle" fill="${palette.accent}" font-family="Georgia, serif" font-size="28">Com carinho</text>
+</svg>`;
+}
+
+export function applyInviteMeta(html: string, meta: { title: string; description: string; themeColor: string; url: string }): string {
+  const title = xmlEscape(meta.title).slice(0, 140);
+  const description = xmlEscape(meta.description).slice(0, 220);
+  const themeColor = /^#[0-9a-fA-F]{6}$/.test(meta.themeColor) ? meta.themeColor : "#f6f0e7";
+  const url = xmlEscape(meta.url);
+  let next = html
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${title}</title>`)
+    .replace(/<meta name="description" content="[^"]*"\s*\/?>/i, `<meta name="description" content="${description}" />`)
+    .replace(/<meta name="theme-color" content="[^"]*"\s*\/?>/i, `<meta name="theme-color" content="${themeColor}" />`)
+    .replace(/<meta property="og:title" content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${title}" />`)
+    .replace(/<meta property="og:description" content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${description}" />`);
+  if (!/property="og:url"/i.test(next)) {
+    next = next.replace("</head>", `    <meta property="og:url" content="${url}" />\n  </head>`);
+  }
+  return next;
 }
 
 export function createRateLimiter(limit: number, windowMs: number) {

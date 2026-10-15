@@ -25,7 +25,7 @@ function pathToPage(pathname: string): Page {
   if (pathname === '/admin' || pathname === '/admin/configuracoes/whatsapp') return 'admin';
   if (pathname === '/enxoval') return 'registry';
   if (pathname === '/comprados') return 'purchased';
-  if (pathname === '/convite') return 'invitation';
+  if (pathname === '/convite' || /^\/c\/[A-Za-z0-9_-]{22,80}$/.test(pathname)) return 'invitation';
   return 'home';
 }
 
@@ -103,7 +103,7 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
     <div className="relative min-h-screen selection:bg-gold/20 selection:text-ink">
-      <Navbar onNavigate={navigate} currentPage={currentPage} />
+      {currentPage !== 'invitation' && <Navbar onNavigate={navigate} currentPage={currentPage} />}
       {currentPage !== 'admin' && <WeddingMusic />}
 
       <main>
@@ -175,7 +175,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gold/10 px-6 py-12 text-center">
+      {currentPage !== 'invitation' && <footer className="border-t border-gold/10 px-6 py-12 text-center">
         <div className="mx-auto max-w-7xl">
           <h2 className="mb-4 font-serif text-3xl sm:text-4xl">{settings.coupleNames ?? 'Tais & Yran'}</h2>
           <p className="mb-6 text-xs uppercase tracking-[0.25em] text-ink/50">{weddingDateLabel}</p>
@@ -183,7 +183,7 @@ export default function App() {
             Feito com carinho para o nosso novo começo.
           </p>
         </div>
-      </footer>
+      </footer>}
     </div>
     </MotionConfig>
   );

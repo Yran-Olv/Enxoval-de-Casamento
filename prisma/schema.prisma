@@ -79,6 +79,61 @@ model Settings {
   rsvpDeadline      String  @default("")
   dressCode         String  @default("")
   coupleStory       String  @default("")
+  inviteTheme       String  @default("classico")
+  openingText       String  @default("Você recebeu um convite especial")
+  romanticLine      String  @default("")
+  coverPhotoUrl     String  @default("")
+  galleryJson       String  @default("[]")
+  scheduleJson      String  @default("[]")
+  ceremonyNotes     String  @default("")
+  receptionNotes    String  @default("")
+  extraInfo         String  @default("")
+  rsvpText          String  @default("Sua presença é o presente mais importante. Conte se poderemos comemorar juntos.")
+  showStory         Boolean @default(true)
+  showGallery       Boolean @default(true)
+  showSchedule      Boolean @default(true)
+  showDress         Boolean @default(true)
+  showGifts         Boolean @default(true)
+  inviteTemplate    String  @default("Olá, {nome}! ❤️\n\nPreparamos um convite muito especial para você.\n\nNós vamos nos casar e ficaremos muito felizes em compartilhar esse momento com você!\n\n📅 Data: {data}\n🕒 Horário: {horario}\n\nAbra seu convite especial:\n{link}\n\nEsperamos você! Com carinho, {casal}.")
+  saveTheDateTemplate String @default("Olá, {nome}! Guarde esta data com carinho.\n\n📅 {data}, às {horario}\n\n{casal} vão se casar. O convite completo está aqui:\n{link}")
+  reminderTemplate  String  @default("Olá, {nome}! Ainda não recebemos sua resposta para o casamento de {casal}.\n\n📅 {data} às {horario}\n\nAbra o convite e confirme sua presença:\n{link}")
+  soonTemplate      String  @default("Olá, {nome}! O casamento de {casal} está chegando.\n\n📅 {data} às {horario}\n\nVeja os detalhes no seu convite:\n{link}")
+}
+
+model WeddingGuest {
+  id            String                 @id @default(uuid())
+  token         String                 @unique
+  name          String
+  whatsapp      String                 @unique
+  groupName     String                 @default("amigos")
+  seats         Int                    @default(1)
+  notes         String                 @default("")
+  optedOut      Boolean                @default(false)
+  status        String                 @default("pending")
+  lastError     String                 @default("")
+  attemptCount  Int                    @default(0)
+  lastRequestId String                 @default("")
+  sentAt        DateTime?
+  lastAttemptAt DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  rsvp          WeddingRsvp?
+  attempts      WeddingInviteAttempt[]
+
+  @@index([status])
+  @@index([groupName])
+}
+
+model WeddingInviteAttempt {
+  id        String       @id @default(uuid())
+  guestId   String
+  guest     WeddingGuest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  campaign  String
+  status    String
+  requestId String       @default("")
+  createdAt DateTime     @default(now())
+
+  @@index([guestId, createdAt])
 }
 
 model WeddingRsvp {
@@ -88,6 +143,8 @@ model WeddingRsvp {
   guests    Int      @default(1)
   attending Boolean
   message   String?
+  guestId   String?      @unique
+  guest     WeddingGuest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

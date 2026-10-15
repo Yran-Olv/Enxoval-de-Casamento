@@ -3,7 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { whatsappChatUrl } from '../../server/domain';
 import { ProdutoComprado, EnxovalItem, SettingsData } from '../types';
-import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2, Users } from 'lucide-react';
+import AdminGuests from './AdminGuests';
+import AdminInviteSettings from './AdminInviteSettings';
 
 export default function AdminPanel() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -16,7 +18,7 @@ export default function AdminPanel() {
   };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'guests' | 'settings'>('overview');
 
   // Data states
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
@@ -72,7 +74,7 @@ export default function AdminPanel() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [formData, setFormData] = useState<any>({});
   const [selectedRegistryIds, setSelectedRegistryIds] = useState<string[]>([]);
-  const [settingsTab, setSettingsTab] = useState<'account' | 'general' | 'whatsapp' | 'backup'>('general');
+  const [settingsTab, setSettingsTab] = useState<'account' | 'general' | 'invite' | 'whatsapp' | 'backup'>('general');
   const [adminProfile, setAdminProfile] = useState({
     email: '',
     currentPassword: '',
@@ -490,6 +492,7 @@ export default function AdminPanel() {
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
           { id: 'reservations', label: 'Presentes reservados', icon: MessageSquare },
           { id: 'rsvps', label: 'Confirmações', icon: CalendarDays },
+          { id: 'guests', label: 'Convidados', icon: Users },
           { id: 'settings', label: 'Configurações', icon: Database },
         ].map(tab => (
           <button
@@ -617,13 +620,14 @@ export default function AdminPanel() {
                 {[
                   { id: 'account', label: 'Conta Admin' },
                   { id: 'general', label: 'Geral / PIX' },
+                  { id: 'invite', label: 'Convite' },
                   { id: 'whatsapp', label: 'WhatsApp' },
                   { id: 'backup', label: 'Backup' },
                 ].map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setSettingsTab(tab.id as 'account' | 'general' | 'whatsapp' | 'backup')}
+                    onClick={() => setSettingsTab(tab.id as 'account' | 'general' | 'invite' | 'whatsapp' | 'backup')}
                     className={`px-5 py-3 rounded-xl text-[10px] uppercase tracking-widest font-bold border transition-all ${
                       settingsTab === tab.id
                         ? 'bg-gold text-white border-gold'
@@ -781,6 +785,10 @@ export default function AdminPanel() {
                 </form>
               )}
 
+              {settingsTab === 'invite' && (
+                <AdminInviteSettings settings={pixSettings} onChange={setPixSettings} onSave={handleSavePix} />
+              )}
+
               {settingsTab === 'whatsapp' && (
                 <form onSubmit={handleSavePix} className="space-y-6">
                   <div className="space-y-2">
@@ -866,13 +874,23 @@ export default function AdminPanel() {
                 </div>
               )}
             </div>
-          ) : activeTab === 'overview' ? null : (
+          ) : activeTab === 'overview' ? null : activeTab === 'guests' ? (
+            <AdminGuests
+              onNotice={showNotice}
+              coupleNames={pixSettings.coupleNames || 'Tais & Yran'}
+              weddingDate={pixSettings.weddingDate}
+              ceremonyTime={pixSettings.ceremonyTime || '16:00'}
+              ceremonyVenue={pixSettings.ceremonyVenue || ''}
+              theme={pixSettings.inviteTheme || 'classico'}
+            />
+          ) : (
             <>
             {activeTab === 'rsvps' && (
               <div className="mb-6 space-y-3 md:hidden">
                 {visibleRsvps.map((rsvp) => (
                   <article key={rsvp.id} className="rounded-2xl border border-gold/10 bg-white/70 p-4">
                     <h4 className="font-serif text-xl">{rsvp.name}</h4>
+                    {rsvp.guest?.name && <p className="text-xs uppercase tracking-widest opacity-60">Convite de {rsvp.guest.name}</p>}
                     <p className="mt-1 text-sm">{rsvp.attending ? `Confirmado · ${rsvp.guests} ${rsvp.guests === 1 ? 'pessoa' : 'pessoas'}` : 'Não poderá comparecer'}</p>
                     <a href={whatsappChatUrl(String(rsvp.whatsapp))} target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-11 items-center text-sm text-green-800 underline">{rsvp.whatsapp}</a>
                     {rsvp.message && <p className="mt-2 text-sm opacity-70">{rsvp.message}</p>}
@@ -974,6 +992,7 @@ export default function AdminPanel() {
                 <tr key={rsvp.id} className="hover:bg-gold/5 transition-colors">
                   <td className="py-5 pr-4">
                     <div className="font-serif text-lg">{rsvp.name}</div>
+                    {rsvp.guest?.name && <div className="text-[10px] uppercase tracking-widest opacity-50">Convite de {rsvp.guest.name}</div>}
                     {rsvp.message && <div className="mt-1 max-w-xs text-xs opacity-60">{rsvp.message}</div>}
                   </td>
                   <td className="py-5 pr-4">

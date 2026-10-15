@@ -1,8 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { api } from '../api';
-import { googleCalendarUrl, invitationUrl, isRsvpClosed } from '../../server/domain';
-import { CalendarDays, CheckCircle2, Clock3, Heart, MapPin, MessageCircle, Music2, Share2, Sparkles } from 'lucide-react';
+import InvitationEnvelope from './InvitationEnvelope';
+import {
+  INVITE_PALETTES,
+  coupleInitials,
+  googleCalendarUrl,
+  invitationUrl,
+  isInviteToken,
+  isRsvpClosed,
+  parseInviteTheme,
+  readInviteContent,
+  type InviteTheme,
+} from '../../server/domain';
+import { CalendarDays, CheckCircle2, Gift, Heart, MapPin } from 'lucide-react';
 
 type InvitationSettings = {
   coupleNames: string;
@@ -16,7 +27,7 @@ type InvitationSettings = {
   rsvpDeadline: string;
   dressCode: string;
   coupleStory: string;
-};
+} & ReturnType<typeof readInviteContent>;
 
 const defaults: InvitationSettings = {
   coupleNames: 'Tais & Yran',
@@ -30,6 +41,7 @@ const defaults: InvitationSettings = {
   rsvpDeadline: '',
   dressCode: '',
   coupleStory: '',
+  ...readInviteContent(null),
 };
 
 function formattedDate(date: string) {
@@ -39,9 +51,24 @@ function formattedDate(date: string) {
   });
 }
 
+function go(path: string) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+function readToken() {
+  const match = /^\/c\/([A-Za-z0-9_-]{22,80})$/.exec(window.location.pathname);
+  return match && isInviteToken(match[1]) ? match[1] : '';
+}
+
 export default function WeddingInvitation() {
+  const preview = new URLSearchParams(window.location.search).get('preview') === '1';
+  const token = readToken();
   const [settings, setSettings] = useState<InvitationSettings>(defaults);
-  const [loading, setLoading] = useState(true);
+  const [phase, setPhase] = useState<'sealed' | 'opening' | 'revealed'>('sealed');
+  const [guestName, setGuestName] = useState('');
+  const [seatLimit, setSeatLimit] = useState(6);
+  const [tokenMissing, setTokenMissing] = useState(false);
   const [name, setName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [guests, setGuests] = useState('1');
@@ -50,25 +77,71 @@ export default function WeddingInvitation() {
   const [result, setResult] = useState<'yes' | 'no' | null>(null);
   const [error, setError] = useState('');
   const [shareNote, setShareNote] = useState('');
+  const [photo, setPhoto] = useState<number | null>(null);
   const sending = useRef(false);
+  const palette = INVITE_PALETTES[settings.inviteTheme as InviteTheme] ?? INVITE_PALETTES.classico;
 
   useEffect(() => {
+    let cancelled = false;
     api.get('/settings').then((data) => {
+      if (cancelled || !data) return;
+      const visual = readInviteContent(data);
+      let draft = visual;
+      if (preview) {
+        try {
+          const stored = sessionStorage.getItem('enxoval-invite-draft');
+          if (stored) draft = readInviteContent({ ...visual, ...JSON.parse(stored) });
+        } catch {
+          draft = visual;
+        }
+      }
       setSettings({
         ...defaults,
-        ...Object.fromEntries(Object.keys(defaults).map((key) => [key, data?.[key] ?? defaults[key as keyof InvitationSettings]])),
-      } as InvitationSettings);
-    }).catch(() => {
-      // A página continua acessível mesmo se a API estiver indisponível.
-    }).finally(() => setLoading(false));
-  }, []);
+        coupleNames: data.coupleNames || defaults.coupleNames,
+        weddingDate: data.weddingDate || defaults.weddingDate,
+        ceremonyTime: data.ceremonyTime || defaults.ceremonyTime,
+        ceremonyVenue: data.ceremonyVenue || '',
+        ceremonyAddress: data.ceremonyAddress || '',
+        receptionVenue: data.receptionVenue || '',
+        receptionAddress: data.receptionAddress || '',
+        invitationMessage: data.invitationMessage || defaults.invitationMessage,
+        rsvpDeadline: data.rsvpDeadline || '',
+        dressCode: data.dressCode || '',
+        coupleStory: data.coupleStory || '',
+        ...draft,
+        inviteTheme: parseInviteTheme(draft.inviteTheme),
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [preview]);
 
-  const mapsLink = (address: string) => address.trim()
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    : '';
+  useEffect(() => {
+    if (!token) return;
+    api.get(`/invite/${token}`).then((data) => {
+      const guest = data?.guest;
+      if (!guest?.name) {
+        setTokenMissing(true);
+        return;
+      }
+      setGuestName(guest.name);
+      setName(guest.rsvp?.name || guest.name);
+      setSeatLimit(Math.max(1, Math.min(12, Number(guest.seats) || 1)));
+      if (guest.rsvp) {
+        setResult(guest.rsvp.attending ? 'yes' : 'no');
+        setGuests(String(guest.rsvp.guests || 1));
+        setMessage(guest.rsvp.message || '');
+      }
+    }).catch(() => setTokenMissing(true));
+  }, [token]);
+
+  useEffect(() => {
+    if (phase !== 'opening') return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const timer = window.setTimeout(() => setPhase('revealed'), reduce ? 0 : 1500);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
 
   const location = settings.ceremonyAddress || settings.ceremonyVenue;
-  const shareUrl = invitationUrl(window.location.origin);
   const calendarLink = useMemo(() => googleCalendarUrl({
     coupleNames: settings.coupleNames,
     weddingDate: settings.weddingDate,
@@ -77,6 +150,8 @@ export default function WeddingInvitation() {
     location,
   }), [location, settings]);
   const deadlineClosed = isRsvpClosed(settings.rsvpDeadline);
+  const shareUrl = token ? `${window.location.origin}/c/${token}` : invitationUrl(window.location.origin);
+  const maxGuests = token ? seatLimit : 6;
 
   const shareInvite = async () => {
     const payload = { title: `Casamento — ${settings.coupleNames}`, text: settings.invitationMessage, url: shareUrl };
@@ -93,9 +168,10 @@ export default function WeddingInvitation() {
   };
 
   const respond = async (attendance: 'yes' | 'no') => {
+    if (preview) return;
     setError('');
     if (sending.current) return;
-    if (!name.trim() || !whatsapp.trim()) {
+    if (!token && (!name.trim() || !whatsapp.trim())) {
       setError('Informe seu nome e WhatsApp para confirmar a resposta.');
       return;
     }
@@ -103,6 +179,7 @@ export default function WeddingInvitation() {
     setSubmitting(true);
     try {
       await api.post('/rsvp', {
+        inviteToken: token || undefined,
         name: name.trim(),
         whatsapp: whatsapp.replace(/\D/g, ''),
         guests: attendance === 'yes' ? Number(guests) : 0,
@@ -118,103 +195,219 @@ export default function WeddingInvitation() {
     }
   };
 
+  if (phase !== 'revealed') {
+    return (
+      <InvitationEnvelope
+        theme={parseInviteTheme(settings.inviteTheme)}
+        initials={coupleInitials(settings.coupleNames)}
+        guestName={guestName}
+        openingText={settings.openingText}
+        phase={phase === 'opening' ? 'opening' : 'sealed'}
+        onOpen={() => setPhase('opening')}
+        onSkip={() => setPhase('revealed')}
+      />
+    );
+  }
+
+  const maps = (address: string) => address.trim() ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '';
+
   return (
-    <div className="min-h-screen bg-[#fbf8f3] text-[#44382f]">
-      <section className="relative overflow-hidden px-6 pb-16 pt-32 md:pb-24 md:pt-40">
-        <div className="pointer-events-none absolute inset-0 opacity-50" aria-hidden="true">
-          <div className="absolute -left-24 top-16 h-72 w-72 rounded-full bg-[#e9d8c8] blur-3xl" />
-          <div className="absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-[#d8c8ae] blur-3xl" />
-        </div>
-        <div className="relative mx-auto max-w-4xl text-center">
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7 }}>
-            <div className="mb-6 flex items-center justify-center gap-2 text-xs uppercase tracking-[.32em] text-[#9b7951]"><Sparkles size={14} /> Um convite feito com amor</div>
-            <Heart className="mx-auto mb-5 text-[#ad8b62]" size={27} strokeWidth={1.2} />
-            <p className="font-serif text-xl italic text-[#88735e]">Vamos celebrar o amor</p>
-            <h1 className="mt-4 break-words font-serif text-6xl leading-[.98] text-[#66513e] md:text-8xl">{settings.coupleNames}</h1>
-            <div className="mx-auto my-8 flex max-w-sm items-center gap-4 text-[#b39a7a]"><span className="h-px flex-1 bg-current" /><Heart size={15} /><span className="h-px flex-1 bg-current" /></div>
-            <p className="mx-auto max-w-xl font-serif text-xl leading-relaxed text-[#88735e]">{settings.invitationMessage}</p>
-            <div className="mx-auto mt-9 inline-flex items-center gap-3 rounded-full border border-[#d8c8ae] bg-white/70 px-6 py-3 text-sm text-[#806748]"><CalendarDays size={18} /> {formattedDate(settings.weddingDate)}</div>
-          </motion.div>
-          <div className="mx-auto mt-10 grid max-w-2xl grid-cols-2 gap-3 text-center md:grid-cols-4">
-            {[
-              { icon: Clock3, label: 'Horário', value: settings.ceremonyTime || 'A definir' },
-              { icon: MapPin, label: 'Cerimônia', value: settings.ceremonyVenue || 'Local a definir' },
-              { icon: Music2, label: 'Recepção', value: settings.receptionVenue || 'A definir' },
-              { icon: Heart, label: 'Traje', value: settings.dressCode || 'Como preferir' },
-            ].map(({ icon: Icon, label, value }) => <div key={label} className="rounded-2xl border border-[#e7ddd0] bg-white/65 p-4"><Icon className="mx-auto mb-2 text-[#aa8c67]" size={19} /><p className="text-[10px] uppercase tracking-[.18em] text-[#a18d77]">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}
-          </div>
-          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href={calendarLink} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#82694f] px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-white transition hover:bg-[#6c543d]"><CalendarDays size={16} /> Google Agenda</a>
-            <button type="button" onClick={() => void shareInvite()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-[#82694f]"><Share2 size={16} /> Compartilhar</button>
-          </div>
-          {shareNote && <p className="mt-3 text-sm text-[#806748]" role="status">{shareNote}</p>}
-        </div>
+    <div style={{ background: palette.bg, color: palette.ink }}>
+      {preview && <p className="px-4 py-3 text-center text-sm" style={{ background: palette.accent, color: palette.onAccent }} role="status">Pré-visualização. Nenhuma resposta será gravada.</p>}
+      {tokenMissing && <p className="px-4 py-3 text-center text-sm" role="alert">Não encontramos este convite. Você ainda pode ver o convite geral.</p>}
+      <section className="mx-auto flex min-h-[80vh] max-w-3xl flex-col items-center justify-center px-4 py-16 text-center">
+        <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+          <p className="text-4xl" style={{ fontFamily: '"Great Vibes", cursive', color: palette.accent }}>{coupleInitials(settings.coupleNames)}</p>
+          {guestName && <p className="mt-4 text-sm uppercase tracking-[.22em]" style={{ color: palette.muted }}>Para {guestName}</p>}
+          <h1 className="mt-4 break-words font-serif text-6xl leading-none md:text-8xl">{settings.coupleNames}</h1>
+          <p className="mx-auto mt-6 max-w-xl font-serif text-2xl italic" style={{ color: palette.muted }}>{settings.romanticLine || settings.invitationMessage}</p>
+          <p className="mt-6 text-sm uppercase tracking-[.18em]">{formattedDate(settings.weddingDate)} · {settings.ceremonyTime || '16:00'}</p>
+        </motion.div>
+        {settings.coverPhotoUrl && (
+          <img src={settings.coverPhotoUrl} alt="Foto do casal" className="mt-8 max-h-80 w-full max-w-xl rounded-[2rem] object-cover" />
+        )}
+        <InviteCountdown date={settings.weddingDate} time={settings.ceremonyTime || '16:00'} color={palette.ink} />
+        <button type="button" onClick={() => document.getElementById('confirmar')?.scrollIntoView({ behavior: 'smooth' })} className="mt-8 min-h-11 rounded-full px-6 text-xs font-semibold uppercase tracking-[.16em]" style={{ background: palette.accent, color: palette.onAccent }}>
+          Continuar
+        </button>
       </section>
 
-      {settings.coupleStory.trim() && (
-        <section className="px-6 pb-6">
-          <div className="mx-auto max-w-3xl rounded-[2rem] border border-[#e5d8c8] bg-white px-7 py-8 text-center md:px-12">
-            <p className="text-xs uppercase tracking-[.25em] text-[#ad8b62]">Nossa história</p>
-            <p className="mt-4 whitespace-pre-line font-serif text-2xl leading-relaxed text-[#66513e]">{settings.coupleStory}</p>
-          </div>
+      {settings.showStory && settings.coupleStory.trim() && (
+        <Reveal>
+          <section className="mx-auto max-w-3xl px-4 py-8 text-center">
+            <h2 className="font-serif text-4xl">Nossa história</h2>
+            <p className="mt-4 whitespace-pre-line font-serif text-2xl leading-relaxed">{settings.coupleStory}</p>
+          </section>
+        </Reveal>
+      )}
+
+      {settings.showGallery && settings.gallery.length > 0 && (
+        <Reveal>
+          <section className="mx-auto max-w-5xl px-4 py-8" aria-label="Galeria">
+            <h2 className="text-center font-serif text-4xl">Momentos</h2>
+            <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3">
+              {settings.gallery.map((item, index) => (
+                <button key={item.url} type="button" onClick={() => setPhoto(index)} className="overflow-hidden rounded-2xl">
+                  <img src={item.url} alt={item.alt || `Foto ${index + 1} do casal`} className="h-40 w-full object-cover md:h-56" />
+                </button>
+              ))}
+            </div>
+          </section>
+        </Reveal>
+      )}
+
+      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-8 md:grid-cols-2">
+        <PlaceCard palette={palette} title="Cerimônia" name={settings.ceremonyVenue} address={settings.ceremonyAddress} notes={settings.ceremonyNotes} />
+        <PlaceCard palette={palette} title="Recepção" name={settings.receptionVenue} address={settings.receptionAddress} notes={settings.receptionNotes} />
+      </section>
+
+      {settings.showSchedule && settings.schedule.length > 0 && (
+        <Reveal>
+          <section className="mx-auto max-w-3xl px-4 py-8">
+            <h2 className="text-center font-serif text-4xl">Programação</h2>
+            <ol className="mt-6 space-y-4">
+              {settings.schedule.map((item) => (
+                <li key={`${item.time}-${item.title}`} className="rounded-2xl border p-4" style={{ borderColor: palette.line, background: palette.paper }}>
+                  <p className="text-xs uppercase tracking-[.18em]" style={{ color: palette.accent }}>{item.time}</p>
+                  <h3 className="font-serif text-2xl">{item.title}</h3>
+                  {item.detail && <p className="mt-1 text-sm" style={{ color: palette.muted }}>{item.detail}</p>}
+                </li>
+              ))}
+            </ol>
+          </section>
+        </Reveal>
+      )}
+
+      {(settings.showDress && (settings.dressCode || settings.extraInfo)) && (
+        <section className="mx-auto max-w-3xl px-4 py-8 text-center">
+          <h2 className="font-serif text-4xl">Para o grande dia</h2>
+          {settings.dressCode && <p className="mt-3">Traje: {settings.dressCode}</p>}
+          {settings.extraInfo && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed" style={{ color: palette.muted }}>{settings.extraInfo}</p>}
         </section>
       )}
 
-      <section className="px-6 pb-24">
-        <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-2">
-          <div className="rounded-[2rem] border border-[#e5d8c8] bg-white p-7 shadow-sm md:p-10">
-            <span className="text-xs uppercase tracking-[.25em] text-[#ad8b62]">Será uma alegria ter você</span>
-            <h2 className="mt-3 font-serif text-4xl text-[#66513e]">Confirme sua presença</h2>
-            {result ? (
-              <div className="mt-8 rounded-2xl bg-[#f4f0e8] p-6 text-center">
-                <CheckCircle2 className="mx-auto mb-3 text-[#7b8d68]" size={36} />
-                <p className="font-serif text-2xl">{result === 'yes' ? 'Presença confirmada!' : 'Resposta registrada'}</p>
-                <p className="mt-2 text-sm text-[#887b6d]">{result === 'yes' ? 'Obrigado por celebrar esse momento com a gente.' : 'Obrigado por nos avisar. Sentiremos sua falta!'}</p>
-                <button type="button" onClick={() => setResult(null)} className="mt-5 min-h-11 text-xs font-semibold uppercase tracking-widest text-[#9b7951] underline">Atualizar resposta</button>
+      <section id="confirmar" className="mx-auto grid max-w-5xl gap-6 px-4 py-10 md:grid-cols-2">
+        <div className="rounded-[2rem] border p-6 md:p-8" style={{ borderColor: palette.line, background: palette.paper }}>
+          <h2 className="font-serif text-4xl">Confirme sua presença</h2>
+          <p className="mt-3 text-sm leading-relaxed" style={{ color: palette.muted }}>{settings.rsvpText}</p>
+          {result ? (
+            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-6 rounded-2xl p-6 text-center" style={{ background: palette.bg }} role="status">
+              <CheckCircle2 className="mx-auto mb-3" style={{ color: palette.accent }} />
+              <p className="font-serif text-3xl">{result === 'yes' ? 'Presença confirmada' : 'Resposta registrada'}</p>
+              <p className="mt-2 text-sm">{result === 'yes' ? 'Que bom que você vem. Guardamos sua resposta com carinho.' : 'Obrigado por nos avisar. Sentiremos sua falta.'}</p>
+              {!preview && <button type="button" onClick={() => setResult(null)} className="mt-4 min-h-11 text-sm underline">Corrigir resposta</button>}
+            </motion.div>
+          ) : deadlineClosed ? (
+            <p className="mt-6 text-sm" role="status">O prazo para confirmar presença encerrou em {formattedDate(settings.rsvpDeadline)}. Fale com os noivos se precisar alterar algo.</p>
+          ) : (
+            <form className="mt-6 space-y-4" onSubmit={(event) => event.preventDefault()}>
+              <Field label="Seu nome" value={name} setValue={setName} autoComplete="name" />
+              {!token && <Field label="WhatsApp" value={whatsapp} setValue={setWhatsapp} inputMode="tel" autoComplete="tel" />}
+              <label className="block text-xs font-semibold uppercase tracking-wider" style={{ color: palette.muted }}>
+                Quantas pessoas irão?
+                <select value={guests} onChange={(e) => setGuests(e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border px-3 text-sm normal-case" style={{ borderColor: palette.line, background: palette.bg, color: palette.ink }}>
+                  {Array.from({ length: maxGuests }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} {count === 1 ? 'pessoa' : 'pessoas'}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-semibold uppercase tracking-wider" style={{ color: palette.muted }}>
+                Recado
+                <textarea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={1000} rows={3} className="mt-2 w-full rounded-xl border px-3 py-3 text-sm normal-case" style={{ borderColor: palette.line, background: palette.bg, color: palette.ink }} />
+              </label>
+              {token && <p className="text-xs" style={{ color: palette.muted }}>{`Este convite autoriza até ${seatLimit} ${seatLimit === 1 ? 'pessoa' : 'pessoas'}.`}</p>}
+              {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button type="button" disabled={submitting || preview} onClick={() => void respond('yes')} className="min-h-11 rounded-xl px-4 text-xs font-semibold uppercase tracking-wider disabled:opacity-50" style={{ background: palette.accent, color: palette.onAccent }}>{submitting ? 'Enviando…' : 'Estarei presente'}</button>
+                <button type="button" disabled={submitting || preview} onClick={() => void respond('no')} className="min-h-11 rounded-xl border px-4 text-xs font-semibold uppercase tracking-wider disabled:opacity-50" style={{ borderColor: palette.line, color: palette.ink }}>Não poderei ir</button>
               </div>
-            ) : loading ? <p className="mt-7 text-sm text-[#887b6d]" role="status">Preparando o convite…</p> : deadlineClosed ? (
-              <p className="mt-7 rounded-2xl bg-[#f4f0e8] p-6 text-sm leading-relaxed text-[#66513e]" role="status">O prazo para confirmar presença encerrou em {formattedDate(settings.rsvpDeadline)}. Se precisar alterar sua resposta, fale diretamente com os noivos.</p>
-            ) : (
-              <form className="mt-7 space-y-4" onSubmit={(event) => event.preventDefault()}>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">Seu nome completo<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoComplete="name" className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]" placeholder="Digite seu nome" /></label>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">WhatsApp<input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} required maxLength={24} inputMode="tel" autoComplete="tel" className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]" placeholder="(34) 99999-9999" /></label>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">Quantas pessoas irão?<select value={guests} onChange={(e) => setGuests(e.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]">{[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n} {n===1?'pessoa':'pessoas'}</option>)}</select></label>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">Recado para os noivos (opcional)<textarea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={1000} rows={3} className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]" placeholder="Deixe uma mensagem carinhosa" /></label>
-                {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button type="button" disabled={submitting} onClick={() => void respond('yes')} className="flex items-center justify-center gap-2 rounded-xl bg-[#82694f] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-white disabled:opacity-50"><CheckCircle2 size={16} /> {submitting ? 'Enviando…' : 'Estarei presente'}</button>
-                  <button type="button" disabled={submitting} onClick={() => void respond('no')} className="rounded-xl border border-[#d8c8ae] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[#82694f] disabled:opacity-50">Não poderei ir</button>
-                </div>
-                {settings.rsvpDeadline && <p className="text-xs text-[#9a8876]">Por favor, responda até {formattedDate(settings.rsvpDeadline)}.</p>}
-                <p className="text-[11px] leading-relaxed text-[#a09283]">Usamos nome, WhatsApp, quantidade de pessoas e recado só para organizar o casamento e falar com você sobre o convite. Uma nova resposta com o mesmo WhatsApp atualiza a anterior. Os noivos podem apagar esses dados no painel quando o evento terminar.</p>
-              </form>
-            )}
+            </form>
+          )}
+        </div>
+        <div className="space-y-4">
+          {settings.showGifts && (
+            <button type="button" onClick={() => go('/enxoval')} className="flex min-h-24 w-full items-center gap-3 rounded-[2rem] px-6 text-left" style={{ background: palette.accent, color: palette.onAccent }}>
+              <Gift /> <span><strong className="block font-serif text-3xl">Lista de presentes</strong><span className="text-sm">Escolher um presente do enxoval</span></span>
+            </button>
+          )}
+          <div className="flex flex-wrap gap-3">
+            <a href={calendarLink} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-full border px-5 text-xs font-semibold uppercase tracking-wider" style={{ borderColor: palette.line }}><CalendarDays size={16} /> Google Agenda</a>
+            <button type="button" onClick={() => void shareInvite()} className="inline-flex min-h-11 items-center gap-2 rounded-full border px-5 text-xs font-semibold uppercase tracking-wider" style={{ borderColor: palette.line }}>Compartilhar</button>
           </div>
-
-          <div className="space-y-6">
-            <div className="rounded-[2rem] border border-[#e5d8c8] bg-[#f3ece2] p-7 md:p-9">
-              <span className="text-xs uppercase tracking-[.25em] text-[#ad8b62]">Como chegar</span>
-              <h2 className="mt-3 font-serif text-3xl text-[#66513e]">Cerimônia</h2>
-              <p className="mt-3 font-medium">{settings.ceremonyVenue || 'Local a confirmar'}</p>
-              <p className="mt-1 text-sm text-[#887b6d]">{settings.ceremonyAddress || 'O endereço será divulgado em breve.'}</p>
-              {mapsLink(settings.ceremonyAddress || settings.ceremonyVenue) && <a href={mapsLink(settings.ceremonyAddress || settings.ceremonyVenue)} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#82694f]"><MapPin size={15} /> Abrir no mapa</a>}
-            </div>
-            <div className="rounded-[2rem] border border-[#e5d8c8] bg-white p-7 md:p-9">
-              <span className="text-xs uppercase tracking-[.25em] text-[#ad8b62]">Depois da cerimônia</span>
-              <h2 className="mt-3 font-serif text-3xl text-[#66513e]">Recepção</h2>
-              <p className="mt-3 font-medium">{settings.receptionVenue || 'Informações em breve'}</p>
-              <p className="mt-1 text-sm text-[#887b6d]">{settings.receptionAddress || 'Estamos preparando cada detalhe com carinho.'}</p>
-              {mapsLink(settings.receptionAddress || settings.receptionVenue) && <a href={mapsLink(settings.receptionAddress || settings.receptionVenue)} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#e5d8c8] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#82694f]"><MapPin size={15} /> Abrir no mapa</a>}
-            </div>
-            <div className="rounded-[2rem] bg-[#82694f] p-7 text-white md:p-9">
-              <MessageCircle className="mb-4" size={24} />
-              <h3 className="font-serif text-3xl">Sua presença é nosso presente</h3>
-              <p className="mt-3 text-sm leading-relaxed text-white/80">Mais do que qualquer coisa, queremos compartilhar esse dia com pessoas especiais. Obrigado por fazer parte da nossa história.</p>
-            </div>
-          </div>
+          {shareNote && <p className="text-sm" role="status">{shareNote}</p>}
+          <p className="font-serif text-3xl"><Heart className="mb-3 inline" size={18} /> Obrigado por fazer parte da nossa história.</p>
         </div>
       </section>
-      <footer className="border-t border-[#e5d8c8] px-6 py-10 text-center"><p className="font-serif text-3xl">{settings.coupleNames}</p><p className="mt-2 text-[10px] uppercase tracking-[.25em] text-[#a18d77]">Feito com amor · {formattedDate(settings.weddingDate)}</p></footer>
+      <footer className="px-4 py-10 text-center">
+        <p className="font-serif text-3xl">{settings.coupleNames}</p>
+        <button type="button" onClick={() => go('/')} className="mt-3 min-h-11 text-sm underline" style={{ color: palette.muted }}>Voltar ao site</button>
+      </footer>
+      {photo !== null && settings.gallery[photo] && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="Foto ampliada">
+          <img src={settings.gallery[photo].url} alt={settings.gallery[photo].alt || 'Foto do casal'} className="max-h-[80vh] max-w-full rounded-2xl object-contain" />
+          <button type="button" onClick={() => setPhoto(null)} className="mt-4 min-h-11 rounded-full bg-white px-5 text-sm text-black">Fechar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Reveal({ children }: { children: ReactNode }) {
+  return <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.3 }} transition={{ duration: 0.5 }}>{children}</motion.div>;
+}
+
+function Field({ label, value, setValue, ...props }: { label: string; value: string; setValue: (value: string) => void } & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className="block text-xs font-semibold uppercase tracking-wider opacity-80">
+      {label}
+      <input value={value} onChange={(event) => setValue(event.target.value)} required maxLength={120} className="mt-2 min-h-11 w-full rounded-xl border border-black/10 bg-white/60 px-3 text-sm normal-case tracking-normal text-inherit" {...props} />
+    </label>
+  );
+}
+
+function PlaceCard({ palette, title, name, address, notes }: { palette: (typeof INVITE_PALETTES)[InviteTheme]; title: string; name: string; address: string; notes: string }) {
+  const href = (address || name).trim() ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || name)}` : '';
+  return (
+    <article className="rounded-[2rem] border p-6" style={{ borderColor: palette.line, background: palette.paper }}>
+      <h2 className="font-serif text-3xl">{title}</h2>
+      <p className="mt-3 font-medium">{name || 'Local a confirmar'}</p>
+      <p className="mt-1 text-sm" style={{ color: palette.muted }}>{address || 'O endereço será divulgado em breve.'}</p>
+      {notes && <p className="mt-3 text-sm">{notes}</p>}
+      {href && <a href={href} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold uppercase tracking-wider" style={{ color: palette.accent }}><MapPin size={16} /> Abrir no mapa</a>}
+    </article>
+  );
+}
+
+function InviteCountdown({ date, time, color }: { date: string; time: string; color: string }) {
+  const [left, setLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, past: false });
+  useEffect(() => {
+    const target = new Date(`${date}T${time}:00`).getTime();
+    const tick = () => {
+      const distance = target - Date.now();
+      if (distance <= 0) {
+        setLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, past: true });
+        return;
+      }
+      setLeft({
+        days: Math.floor(distance / 86400000),
+        hours: Math.floor((distance % 86400000) / 3600000),
+        minutes: Math.floor((distance % 3600000) / 60000),
+        seconds: Math.floor((distance % 60000) / 1000),
+        past: false,
+      });
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [date, time]);
+  if (left.past) return <p className="mt-8 font-serif text-2xl italic">O grande dia chegou.</p>;
+  const items = [['Dias', left.days], ['Horas', left.hours], ['Minutos', left.minutes], ['Segundos', left.seconds]] as const;
+  return (
+    <div className="mt-8 flex gap-4" role="timer" aria-label={`Faltam ${left.days} dias, ${left.hours} horas e ${left.minutes} minutos`}>
+      {items.map(([label, value]) => (
+        <div key={label} className="text-center" style={{ color }}>
+          <div className="font-serif text-4xl">{value}</div>
+          <div className="text-[10px] uppercase tracking-widest opacity-70">{label}</div>
+        </div>
+      ))}
     </div>
   );
 }

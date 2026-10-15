@@ -154,6 +154,10 @@ async function sendWhaticketMessage(input: {
   - conferir se o template possui placeholders corretos
   - conferir se os dados estao preenchidos no backend
 
+## Convites individuais
+
+O mesmo endpoint de texto envia o convite, o save the date e os lembretes. O payload continua sendo `{ number, body }`. Esta integração não envia imagem, botão ou status de entrega/leitura. O painel registra apenas se o Whaticket aceitou a requisição (`sent`) ou se ela falhou (`failed`).
+
 ## Seguranca
 
 - Nunca expor `whaticketToken` em endpoint publico.
