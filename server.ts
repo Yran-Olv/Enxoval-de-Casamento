@@ -565,7 +565,7 @@ app.post("/api/login", async (req, res) => {
 
     // 2) Admin de ambiente (.env): funciona sempre, mesmo com users na BD
     //    (antes só era aceite quando não havia nenhum user — isso bloqueava o login “documentado”.)
-    if (emailRaw.toLowerCase() === adminEmail && password === adminPassword) {
+    if (adminPassword && emailRaw.toLowerCase() === adminEmail && password === adminPassword) {
       const token = jwt.sign({ email: emailRaw, role: "admin" }, JWT_SECRET, { expiresIn: "24h" });
       res.cookie("token", token, authCookie);
       return res.json({ user: { email: emailRaw, role: "admin" } });
