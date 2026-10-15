@@ -641,7 +641,7 @@ export default function AdminPanel() {
                   { id: 'account', label: 'Conta Admin' },
                   { id: 'general', label: 'Geral / PIX' },
                   { id: 'invite', label: 'Convite' },
-                  { id: 'whatsapp', label: 'WhatsApp' },
+                  { id: 'whatsapp', label: 'Mensagens / Reservas' },
                   { id: 'backup', label: 'Backup' },
                 ].map((tab) => (
                   <button
@@ -811,42 +811,118 @@ export default function AdminPanel() {
 
               {settingsTab === 'whatsapp' && (
                 <form onSubmit={handleSavePix} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">URL da API WhatsApp</label>
-                    <input type="url" value={pixSettings.whaticketApiUrl || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketApiUrl: e.target.value })} placeholder="https://api.whaticketup.com.br/api/messages/send" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
+                  {/* Status do Módulo Zapo */}
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-50/50 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <h4 className="text-sm font-bold text-emerald-950 uppercase tracking-wider">Módulo Nativo Zapo Ativo</h4>
+                      </div>
+                      <p className="text-xs text-emerald-800 leading-relaxed">
+                        Os envios de convites e avisos de presentes usam a conexão direta do WhatsApp com fila inteligente, sem necessidade do Whaticket.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('whatsapp')}
+                      className="shrink-0 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] uppercase font-bold tracking-widest shadow transition-all"
+                    >
+                      Ver Conexão / QR Code
+                    </button>
                   </div>
+
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">WhatsApp para aviso</label>
-                    <input type="text" value={pixSettings.whatsappNumber || ''} onChange={e => setPixSettings({ ...pixSettings, whatsappNumber: e.target.value.replace(/\D/g, '') })} placeholder="Ex.: 5585999999999 (pais+ddd+número)" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Chave da API</label>
-                    <input type="password" value={pixSettings.whaticketToken || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketToken: e.target.value })} placeholder="Chave/token de autenticação da API" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Template da mensagem WhatsApp</label>
-                    <textarea rows={8} value={pixSettings.whaticketTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })} placeholder={defaultReservationTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">WhatsApp dos Noivos (Para Receber Avisos)</label>
+                    <input
+                      type="text"
+                      value={pixSettings.whatsappNumber || ''}
+                      onChange={e => setPixSettings({ ...pixSettings, whatsappNumber: e.target.value.replace(/\D/g, '') })}
+                      placeholder="Ex.: 5534999122805 (com DDI e DDD)"
+                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
+                    />
                     <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
-                      Variáveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
+                      Número que receberá uma notificação no WhatsApp sempre que um convidado reservar um presente no site.
                     </p>
                   </div>
+
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem automática para o convidado</label>
-                    <textarea rows={8} value={pixSettings.guestReplyTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, guestReplyTemplate: e.target.value })} placeholder={defaultGuestReplyTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem de Aviso aos Noivos (Nova Reserva)</label>
+                    <textarea
+                      rows={6}
+                      value={pixSettings.whaticketTemplate || ''}
+                      onChange={e => setPixSettings({ ...pixSettings, whaticketTemplate: e.target.value })}
+                      placeholder={defaultReservationTemplate}
+                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none"
+                    />
                     <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
-                      Variáveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
+                      Variáveis disponíveis: {'{item}'} {'{nome}'} {'{whatsapp}'} {'{mensagem}'} {'{pixKey}'} {'{pixName}'} {'{couple}'}
                     </p>
                   </div>
+
                   <div className="space-y-2">
-                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem separada da chave PIX (copiar e colar)</label>
-                    <textarea rows={4} value={pixSettings.guestPixTemplate || ''} onChange={e => setPixSettings({ ...pixSettings, guestPixTemplate: e.target.value })} placeholder={defaultGuestPixTemplate} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none" />
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem Automática para o Convidado (Confirmação da Reserva)</label>
+                    <textarea
+                      rows={6}
+                      value={pixSettings.guestReplyTemplate || ''}
+                      onChange={e => setPixSettings({ ...pixSettings, guestReplyTemplate: e.target.value })}
+                      placeholder={defaultGuestReplyTemplate}
+                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none"
+                    />
                     <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
-                      Dica: deixe só a chave e o titular para facilitar o copiar/colar no WhatsApp.
+                      Enviada ao convidado após a reserva com opções de entrega física ou PIX.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-3">
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem Separada com a Chave PIX (Fácil Copiar e Colar)</label>
+                    <textarea
+                      rows={4}
+                      value={pixSettings.guestPixTemplate || ''}
+                      onChange={e => setPixSettings({ ...pixSettings, guestPixTemplate: e.target.value })}
+                      placeholder={defaultGuestPixTemplate}
+                      className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm resize-none"
+                    />
+                    <p className="text-[10px] opacity-50 ml-4 leading-relaxed">
+                      Dica: mantenha apenas a chave e o titular para que o convidado possa copiar e colar rapidamente no banco.
+                    </p>
+                  </div>
+
+                  {/* Configurações Legadas / Avançadas do Whaticket */}
+                  <details className="rounded-2xl border border-gold/15 bg-white/30 p-4 text-xs group">
+                    <summary className="cursor-pointer font-bold uppercase tracking-wider text-gold/70 select-none flex items-center justify-between">
+                      <span>Configurações Legadas / Provedor Externo (Whaticket)</span>
+                      <span className="text-[10px] font-normal opacity-60 group-open:hidden">Clique para expandir</span>
+                    </summary>
+                    <div className="mt-4 space-y-4 pt-3 border-t border-gold/10">
+                      <p className="text-[11px] opacity-70">
+                        O sistema utiliza nativamente o Zapo. Estes campos são preservados apenas para compatibilidade caso queira enviar via Whaticket externo.
+                      </p>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-2">URL da API Whaticket</label>
+                        <input
+                          type="url"
+                          value={pixSettings.whaticketApiUrl || ''}
+                          onChange={e => setPixSettings({ ...pixSettings, whaticketApiUrl: e.target.value })}
+                          placeholder="https://zapoapi.multivus.com.br/api/messages/send"
+                          className="w-full px-4 py-3 bg-white/60 border border-gold/10 rounded-xl text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-2">Chave / Token da API Whaticket</label>
+                        <input
+                          type="password"
+                          value={pixSettings.whaticketToken || ''}
+                          onChange={e => setPixSettings({ ...pixSettings, whaticketToken: e.target.value })}
+                          placeholder="Token da API Whaticket"
+                          className="w-full px-4 py-3 bg-white/60 border border-gold/10 rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+                  </details>
+
+                  <div className="flex flex-wrap gap-3 pt-2">
                     <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
-                      <Save size={16} /> Salvar WhatsApp
+                      <Save size={16} /> Salvar Mensagens
                     </button>
                     <button type="button" onClick={handleTestWhatsApp} className="px-10 py-4 bg-ink text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg">
                       Testar WhatsApp

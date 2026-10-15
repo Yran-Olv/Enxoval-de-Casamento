@@ -104,7 +104,7 @@ export default function AdminGuests({ onNotice, coupleNames, weddingDate, ceremo
         force,
         requestId: crypto.randomUUID().replaceAll('-', '').slice(0, 20),
       });
-      onNotice('success', `${data.sent} mensagem(ns) aceita(s) pelo Whaticket. O painel não recebe confirmação de entrega ou leitura.`);
+      onNotice('success', `${data.sent} mensagem(ns) enviada(s) para a fila do WhatsApp.`);
       setConfirming(false);
       setSelected([]);
       await load();
@@ -137,7 +137,7 @@ export default function AdminGuests({ onNotice, coupleNames, weddingDate, ceremo
   return (
     <div className="space-y-8">
       <div className="rounded-2xl border border-gold/10 bg-white/50 p-5 text-sm leading-relaxed">
-        O envio usa a integração de texto já configurada no Whaticket. Esta API não envia imagem: a arte pode ser baixada e encaminhada pelo celular. O status “Enviado ao provedor” significa apenas que o Whaticket aceitou a mensagem. Entrega e leitura não são informadas por esta integração.
+        O envio usa o WhatsApp com suporte ao botão interativo Webview (o convidado abre o convite em tela cheia diretamente no app). A arte do convite também pode ser baixada e encaminhada manualmente.
       </div>
       <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome ou família" className="min-h-11 rounded-2xl border border-gold/10 px-4" />
@@ -175,7 +175,7 @@ export default function AdminGuests({ onNotice, coupleNames, weddingDate, ceremo
       {confirming && (
         <div className="rounded-2xl border border-gold/20 bg-gold/5 p-4" role="dialog" aria-label="Confirmar envio">
           <p className="font-serif text-2xl">Enviar para {selected.length} {selected.length === 1 ? 'convidado' : 'convidados'}?</p>
-          <p className="mt-2 text-sm">Quem pediu para não receber ou já teve o convite aceito pelo Whaticket será ignorado, a menos que você escolha reenviar.</p>
+          <p className="mt-2 text-sm">Quem pediu para não receber ou já teve o convite enviado será ignorado, a menos que você escolha reenviar.</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <button type="button" disabled={busy} onClick={() => void sendSelected(false)} className="min-h-11 rounded-xl bg-ink px-4 text-xs font-bold uppercase tracking-widest text-white">Confirmar envio</button>
             <button type="button" disabled={busy} onClick={() => void sendSelected(true)} className="min-h-11 rounded-xl border border-gold/30 px-4 text-xs font-bold uppercase tracking-widest">Reenviar mesmo os já enviados</button>
