@@ -40,9 +40,43 @@ const authCookie = {
 
 app.use(express.json());
 app.use(cookieParser());
+const allowedOrigins = new Set<string>([
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
+]);
+if (process.env.NODE_ENV !== "production") {
+  [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+  ].forEach((origin) => allowedOrigins.add(origin));
+}
+if (process.env.APP_URL) {
+  try {
+    const configuredUrl = new URL(process.env.APP_URL);
+    allowedOrigins.add(configuredUrl.origin);
+    if (!configuredUrl.port && configuredUrl.protocol === "http:") {
+      allowedOrigins.add(`${configuredUrl.protocol}//${configuredUrl.hostname}:${process.env.PORT || "3010"}`);
+    }
+    const hostname = configuredUrl.hostname;
+    const alternateHostname = hostname.startsWith("www.") ? hostname.slice(4) : `www.${hostname}`;
+    const alternateUrl = new URL(configuredUrl.toString());
+    alternateUrl.hostname = alternateHostname;
+    allowedOrigins.add(alternateUrl.origin);
+  } catch {
+    console.warn("APP_URL inválida; confira a configuração de origem CORS.");
+  }
+}
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Requests same-origin and server-to-server may omit Origin.
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error("Origem não permitida pela política CORS."));
+    },
     credentials: true,
     exposedHeaders: ["X-Backup-Saved-Path", "X-Backup-Filename"],
   })
