@@ -13,7 +13,7 @@ services:
     volumes:
       - enxoval_pgdata:/var/lib/postgresql/data
     ports:
-      - "5433:5432" # opcional (acesso externo tipo DBeaver)
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s

@@ -50,4 +50,5 @@ export interface SettingsData {
   invitationMessage?: string;
   rsvpDeadline?: string;
   dressCode?: string;
+  coupleStory?: string;
 }

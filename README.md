@@ -197,6 +197,12 @@ docker compose up -d --build
 
 ---
 
+## Variáveis de ambiente
+
+O modelo está em `.env.example`. Em produção, `JWT_SECRET` precisa ter pelo menos 32 caracteres e `ADMIN_PASSWORD` não pode ficar vazio: sem isso o processo não aceita o login de ambiente. O cookie de sessão usa `SameSite=Lax` no site servido pelo Nginx. Defina `COOKIE_SAMESITE=none` só se o app Capacitor chamar a API a partir de outra origem.
+
+`scripts/seedEnxoval.ts` é local e está no `.gitignore`. Não coloque senha, PIX ou telefone reais nesse arquivo e não faça commit dele.
+
 ## Painel administrativo
 
 - **Enxoval / Comprados / Presentes reservados:** cadastro, edição, métricas e acompanhamento de presentes.
@@ -257,6 +263,9 @@ No `.env` local, aponte `DATABASE_URL` para o Postgres (ex.: porta `5433` confor
 npm install
 npm run db:migrate
 npm run dev
+npm test
+npm run lint
+npm run build
 ```
 
 Abrir: `http://localhost:3000`
@@ -266,10 +275,21 @@ Abrir: `http://localhost:3000`
 ## Convite online e confirmações
 
 - A página pública do convite fica em `/convite` (por exemplo, `https://seu-dominio.com/convite`).
-- No painel `/admin`, abra **Configurações → Geral / PIX** para definir data, horário, mensagem, locais, endereços, traje e prazo de RSVP.
-- Os convidados podem responder **Estarei presente** ou **Não poderei ir**. A confirmação registra nome, WhatsApp, número de pessoas e recado; os dados aparecem na aba **Confirmações** do painel.
-- Os endereços do convite geram links para abrir o local no Google Maps, e o botão de agenda cria um evento no Google Calendar.
-- As confirmações também entram nos backups JSON exportados pelo painel. Faça um backup antes de atualizar ou migrar o servidor.
+- No painel `/admin`, abra **Configurações → Geral / PIX** para definir data, horário, mensagem, locais, endereços, traje, prazo de RSVP e, se quiser, a história do casal. A história só aparece no convite quando o campo tem texto.
+- Os convidados podem responder **Estarei presente** ou **Não poderei ir**. A confirmação registra nome, WhatsApp, número de pessoas e recado. Uma nova resposta com o mesmo WhatsApp atualiza a anterior. Os dados aparecem só na aba **Confirmações**; não há listagem pública.
+- Compartilhar copia ou envia a URL real do navegador (`origem/convite`).
+- Os endereços geram links do Google Maps. Google Agenda e o arquivo `.ics` usam o horário de parede em `America/Sao_Paulo`, sem converter a cerimônia para UTC.
+- O casal pode apagar uma resposta no painel. As confirmações entram no backup JSON. Faça um backup antes de importar outro arquivo: a importação substitui os dados atuais.
+- Reservar um presente não significa que o PIX foi pago. O aviso de PIX só registra a intenção enviada pelo convidado.
+
+Depois de atualizar o código em um servidor que já está no ar:
+
+```bash
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+O entrypoint aplica as migrações, inclusive a que torna o WhatsApp da confirmação único e adiciona a história do casal. Não apague o volume do Postgres.
 
 ---
 

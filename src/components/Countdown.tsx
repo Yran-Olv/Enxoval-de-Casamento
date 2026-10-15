@@ -43,10 +43,12 @@ export default function Countdown({ weddingDate, ceremonyTime = '16:00' }: Count
     return () => clearInterval(timer);
   }, [targetDate]);
 
-  if (isPast) return <p className="font-serif text-2xl italic text-gold md:text-3xl">O grande dia chegou! ❤️</p>;
+  if (isPast) return <p className="font-serif text-2xl italic text-ink md:text-3xl">O grande dia chegou.</p>;
+
+  const summary = `Faltam ${timeLeft.days} dias, ${timeLeft.hours} horas e ${timeLeft.minutes} minutos.`;
 
   return (
-    <div className="flex justify-center gap-4 md:gap-8 text-center">
+    <div className="flex justify-center gap-3 sm:gap-8 text-center" role="timer" aria-label={summary}>
       {Object.entries(timeLeft).map(([label, value]) => (
         <motion.div 
           key={label}
@@ -54,7 +56,7 @@ export default function Countdown({ weddingDate, ceremonyTime = '16:00' }: Count
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col"
         >
-          <span className="text-3xl md:text-5xl font-serif text-gold">{value}</span>
+          <span className="text-3xl md:text-5xl font-serif text-ink">{value}</span>
           <span className="text-[10px] md:text-xs uppercase tracking-widest opacity-60 mt-1">
             {label === 'days' ? 'Dias' : label === 'hours' ? 'Horas' : label === 'minutes' ? 'Minutos' : 'Segundos'}
           </span>

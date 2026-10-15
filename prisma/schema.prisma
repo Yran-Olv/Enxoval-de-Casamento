@@ -28,6 +28,8 @@ model EnxovalItem {
   reservas     Reservation[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  @@index([status])
 }
 
 model PurchasedItem {
@@ -48,6 +50,8 @@ model Reservation {
   mensagem    String?
   dataReserva DateTime    @default(now())
   createdAt   DateTime    @default(now())
+
+  @@index([enxovalId])
 }
 
 model Settings {
@@ -74,12 +78,13 @@ model Settings {
   invitationMessage String  @default("Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.")
   rsvpDeadline      String  @default("")
   dressCode         String  @default("")
+  coupleStory       String  @default("")
 }
 
 model WeddingRsvp {
   id        String   @id @default(uuid())
   name      String
-  whatsapp  String
+  whatsapp  String   @unique
   guests    Int      @default(1)
   attending Boolean
   message   String?

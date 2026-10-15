@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import PurchasedItems from './components/PurchasedItems';
-import RegistryList from './components/RegistryList';
-import AdminPanel from './components/AdminPanel';
-import WeddingInvitation from './components/WeddingInvitation';
+
+const PurchasedItems = lazy(() => import('./components/PurchasedItems'));
+const RegistryList = lazy(() => import('./components/RegistryList'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const WeddingInvitation = lazy(() => import('./components/WeddingInvitation'));
 import { api } from './api';
 import { SettingsData } from './types';
 
@@ -35,6 +36,8 @@ export default function App() {
     coupleNames: 'Tais & Yran',
     weddingDate: '2027-02-02',
     ceremonyTime: '16:00',
+    invitationMessage: '',
+    ceremonyVenue: '',
   });
 
   const navigate = (page: Page) => {
@@ -61,6 +64,8 @@ export default function App() {
             coupleNames: data.coupleNames ?? 'Tais & Yran',
             weddingDate: data.weddingDate,
             ceremonyTime: data.ceremonyTime ?? '16:00',
+            invitationMessage: data.invitationMessage ?? '',
+            ceremonyVenue: data.ceremonyVenue ?? '',
           });
         }
       } catch {
@@ -83,11 +88,24 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  useEffect(() => {
+    const titles: Record<Page, string> = {
+      home: 'Início',
+      invitation: 'Convite',
+      registry: 'Lista de presentes',
+      purchased: 'Itens comprados',
+      admin: 'Painel',
+    };
+    document.title = `${settings.coupleNames || 'Casamento'} — ${titles[currentPage]}`;
+  }, [currentPage, settings.coupleNames]);
+
   return (
-    <div className="relative min-h-screen selection:bg-gold/20 selection:text-gold">
+    <MotionConfig reducedMotion="user">
+    <div className="relative min-h-screen selection:bg-gold/20 selection:text-ink">
       <Navbar onNavigate={navigate} currentPage={currentPage} />
 
       <main>
+        <Suspense fallback={<p className="px-6 pt-32 text-center font-serif text-2xl" role="status">Carregando…</p>}>
         <AnimatePresence mode="wait">
           {currentPage === 'home' && (
             <motion.div
@@ -103,6 +121,8 @@ export default function App() {
                 weddingDateLabel={weddingDateLabel}
                 coupleNames={settings.coupleNames ?? 'Tais & Yran'}
                 ceremonyTime={settings.ceremonyTime ?? '16:00'}
+                invitationMessage={settings.invitationMessage}
+                ceremonyVenue={settings.ceremonyVenue}
               />
             </motion.div>
           )}
@@ -149,26 +169,20 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+        </Suspense>
       </main>
 
       {/* Footer */}
-      <footer className="py-20 px-6 border-t border-gold/10 text-center">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-4xl font-serif mb-6">{settings.coupleNames ?? 'Tais & Yran'}</h2>
-          <p className="text-xs uppercase tracking-[0.4em] opacity-40 mb-10">{weddingDateLabel}</p>
-          <div className="flex justify-center gap-6 mb-12">
-            <div className="w-10 h-10 rounded-full border border-gold/20 flex items-center justify-center text-gold hover:bg-gold hover:text-white transition-all cursor-pointer">
-              <span className="font-serif italic">T</span>
-            </div>
-            <div className="w-10 h-10 rounded-full border border-gold/20 flex items-center justify-center text-gold hover:bg-gold hover:text-white transition-all cursor-pointer">
-              <span className="font-serif italic">Y</span>
-            </div>
-          </div>
-          <p className="text-[10px] uppercase tracking-widest opacity-30">
+      <footer className="border-t border-gold/10 px-6 py-12 text-center">
+        <div className="mx-auto max-w-7xl">
+          <h2 className="mb-4 font-serif text-3xl sm:text-4xl">{settings.coupleNames ?? 'Tais & Yran'}</h2>
+          <p className="mb-6 text-xs uppercase tracking-[0.25em] text-ink/50">{weddingDateLabel}</p>
+          <p className="text-[10px] uppercase tracking-widest text-ink/40">
             Feito com carinho para o nosso novo começo.
           </p>
         </div>
       </footer>
     </div>
+    </MotionConfig>
   );
 }

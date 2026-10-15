@@ -12,6 +12,18 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { applyDatabaseUrlToEnv } from "./config/database";
 import { getPreferredPort, resolveAvailablePort } from "./config/server-port";
+import {
+  DEFAULT_INVITATION_MESSAGE,
+  InputError,
+  assertHttpsApiUrl,
+  createRateLimiter,
+  isRsvpClosed,
+  parseCeremonyTime,
+  parseIsoDate,
+  parseRegistryWrite,
+  parseReservationInput,
+  parseRsvpInput,
+} from "./server/domain";
 
 dotenv.config();
 applyDatabaseUrlToEnv();
@@ -32,16 +44,33 @@ if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
 }
 
-/** Em produção (HTTPS) cookies precisam de Secure + SameSite=None; em http://localhost não. */
+/** O site e a API ficam na mesma origem atrás do Nginx, então Lax basta. Capacitor em outra origem usa COOKIE_SAMESITE=none. */
 const isProd = process.env.NODE_ENV === "production";
+const sameSiteEnv = (process.env.COOKIE_SAMESITE || "lax").toLowerCase();
+const sameSite: "lax" | "none" | "strict" =
+  sameSiteEnv === "none" ? "none" : sameSiteEnv === "strict" ? "strict" : "lax";
 const authCookie = {
   httpOnly: true,
   maxAge: 24 * 60 * 60 * 1000,
-  secure: isProd,
-  sameSite: isProd ? ("none" as const) : ("lax" as const),
+  secure: sameSite === "none" || isProd,
+  sameSite,
+  path: "/",
 };
 
-app.use(express.json());
+const allowLogin = createRateLimiter(8, 15 * 60 * 1000);
+const allowRsvp = createRateLimiter(6, 10 * 60 * 1000);
+const allowReservation = createRateLimiter(8, 10 * 60 * 1000);
+const allowPix = createRateLimiter(5, 10 * 60 * 1000);
+
+function clientIp(req: { ip?: string; socket?: { remoteAddress?: string } }) {
+  return req.ip || req.socket?.remoteAddress || "unknown";
+}
+
+function httpStatus(err: unknown, fallback = 400) {
+  return err instanceof InputError ? err.status : fallback;
+}
+
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 const allowedOrigins = new Set<string>([
   "capacitor://localhost",
@@ -84,6 +113,13 @@ app.use(
     exposedHeaders: ["X-Backup-Saved-Path", "X-Backup-Filename"],
   })
 );
+
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof Error && err.message.startsWith("Origem não permitida")) {
+    return res.status(403).json({ error: "Origem não permitida." });
+  }
+  return next(err);
+});
 
 const DEFAULT_WHATSAPP_RESERVATION_TEMPLATE =
   "🎁 Nova reserva no site ({couple})\n\n" +
@@ -136,11 +172,12 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const pixName = String(body.pixName ?? "").trim();
   const coupleNamesRaw = String(body.coupleNames ?? "").trim();
   const coupleNames = coupleNamesRaw || "Tais & Yran";
-  const weddingDateRaw = String(body.weddingDate ?? "").trim();
-  const weddingDate = /^\d{4}-\d{2}-\d{2}$/.test(weddingDateRaw) ? weddingDateRaw : "2027-02-02";
+  const weddingDate = parseIsoDate(body.weddingDate, "2027-02-02");
   const whatsappNumber = String(body.whatsappNumber ?? "").replace(/\D/g, "");
-  const whaticketApiUrl =
-    String(body.whaticketApiUrl ?? "").trim() || "https://api.whaticketup.com.br/api/messages/send";
+  const whaticketApiUrl = assertHttpsApiUrl(
+    body.whaticketApiUrl,
+    "https://api.whaticketup.com.br/api/messages/send"
+  );
   const whaticketToken = String(body.whaticketToken ?? "").trim();
   const whaticketUserId = String(body.whaticketUserId ?? "").trim();
   const whaticketQueueId = String(body.whaticketQueueId ?? "").trim();
@@ -152,15 +189,15 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const guestPixTemplate = guestPixTemplateRaw || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE;
   const whaticketSign = Boolean(body.whaticketSign ?? true);
   const whaticketClose = Boolean(body.whaticketClose ?? false);
-  const ceremonyTime = String(body.ceremonyTime ?? "16:00").trim().slice(0, 5) || "16:00";
+  const ceremonyTime = parseCeremonyTime(body.ceremonyTime);
   const ceremonyVenue = String(body.ceremonyVenue ?? "").trim().slice(0, 180);
   const ceremonyAddress = String(body.ceremonyAddress ?? "").trim().slice(0, 300);
   const receptionVenue = String(body.receptionVenue ?? "").trim().slice(0, 180);
   const receptionAddress = String(body.receptionAddress ?? "").trim().slice(0, 300);
-  const invitationMessage = String(body.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.").trim().slice(0, 1200);
-  const rsvpDeadlineRaw = String(body.rsvpDeadline ?? "").trim();
-  const rsvpDeadline = /^\d{4}-\d{2}-\d{2}$/.test(rsvpDeadlineRaw) ? rsvpDeadlineRaw : "";
+  const invitationMessage = String(body.invitationMessage ?? DEFAULT_INVITATION_MESSAGE).trim().slice(0, 1200) || DEFAULT_INVITATION_MESSAGE;
+  const rsvpDeadline = parseIsoDate(body.rsvpDeadline, "");
   const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
+  const coupleStory = String(body.coupleStory ?? "").trim().slice(0, 2000);
   return {
     pixKey,
     pixName,
@@ -184,6 +221,7 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     invitationMessage,
     rsvpDeadline,
     dressCode,
+    coupleStory,
   };
 }
 
@@ -200,6 +238,11 @@ function buildWhaticketOptionalIds(userIdRaw: string, queueIdRaw: string) {
     if (Number.isInteger(parsed) && parsed > 0) out.queueId = parsed;
   }
   return out;
+}
+
+function rejectWhaticket(scope: string, status: number): never {
+  console.error(`Whaticket ${scope} falhou`, status);
+  throw new Error("Não foi possível enviar a mensagem de WhatsApp.");
 }
 
 async function sendReservationToWhaticket(
@@ -254,10 +297,7 @@ async function sendReservationToWhaticket(
     body: JSON.stringify(ownerBody),
   });
 
-  if (!ownerResp.ok) {
-    const out = await ownerResp.text();
-    throw new Error(`Whaticket falhou (${ownerResp.status}): ${out}`);
-  }
+  if (!ownerResp.ok) rejectWhaticket("aviso aos noivos", ownerResp.status);
 
   // Mensagem de retorno para o convidado que reservou.
   const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
@@ -293,10 +333,7 @@ async function sendReservationToWhaticket(
       },
       body: JSON.stringify(guestBody),
     });
-    if (!guestResp.ok) {
-      const out = await guestResp.text();
-      throw new Error(`Whaticket convidado falhou (${guestResp.status}): ${out}`);
-    }
+    if (!guestResp.ok) rejectWhaticket("resposta ao convidado", guestResp.status);
 
     const guestPixBody = {
       number: guestNumber,
@@ -321,10 +358,7 @@ async function sendReservationToWhaticket(
       },
       body: JSON.stringify(guestPixBody),
     });
-    if (!guestPixResp.ok) {
-      const out = await guestPixResp.text();
-      throw new Error(`Whaticket PIX convidado falhou (${guestPixResp.status}): ${out}`);
-    }
+    if (!guestPixResp.ok) rejectWhaticket("chave PIX do convidado", guestPixResp.status);
 
     if (pixName && pixName !== "(cadastre o titular no painel)") {
       const guestPixOwnerBody = {
@@ -343,10 +377,7 @@ async function sendReservationToWhaticket(
         },
         body: JSON.stringify(guestPixOwnerBody),
       });
-      if (!guestPixOwnerResp.ok) {
-        const out = await guestPixOwnerResp.text();
-        throw new Error(`Whaticket titular PIX convidado falhou (${guestPixOwnerResp.status}): ${out}`);
-      }
+      if (!guestPixOwnerResp.ok) rejectWhaticket("titular PIX do convidado", guestPixOwnerResp.status);
     }
   }
 }
@@ -401,10 +432,7 @@ async function sendPixDonationToWhaticket(
     body: JSON.stringify(body),
   });
 
-  if (!resp.ok) {
-    const out = await resp.text();
-    throw new Error(`Whaticket falhou (${resp.status}): ${out}`);
-  }
+  if (!resp.ok) rejectWhaticket("aviso de PIX", resp.status);
 
   // Confirmação para quem avisou o PIX.
   const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
@@ -436,10 +464,7 @@ async function sendPixDonationToWhaticket(
       },
       body: JSON.stringify(thankYouBody),
     });
-    if (!thankYouResp.ok) {
-      const out = await thankYouResp.text();
-      throw new Error(`Whaticket agradecimento PIX falhou (${thankYouResp.status}): ${out}`);
-    }
+    if (!thankYouResp.ok) rejectWhaticket("agradecimento PIX", thankYouResp.status);
 
     const pixBody = {
       number: guestNumber,
@@ -457,10 +482,7 @@ async function sendPixDonationToWhaticket(
       },
       body: JSON.stringify(pixBody),
     });
-    if (!pixResp.ok) {
-      const out = await pixResp.text();
-      throw new Error(`Whaticket chave PIX falhou (${pixResp.status}): ${out}`);
-    }
+    if (!pixResp.ok) rejectWhaticket("chave PIX", pixResp.status);
 
     if (pixName && pixName !== "(cadastre o titular no painel)") {
       const pixOwnerBody = {
@@ -479,10 +501,7 @@ async function sendPixDonationToWhaticket(
         },
         body: JSON.stringify(pixOwnerBody),
       });
-      if (!pixOwnerResp.ok) {
-        const out = await pixOwnerResp.text();
-        throw new Error(`Whaticket titular PIX falhou (${pixOwnerResp.status}): ${out}`);
-      }
+      if (!pixOwnerResp.ok) rejectWhaticket("titular PIX", pixOwnerResp.status);
     }
   }
 }
@@ -522,10 +541,7 @@ async function sendWhaticketTestMessage(
     body: JSON.stringify(body),
   });
 
-  if (!resp.ok) {
-    const out = await resp.text();
-    throw new Error(`Whaticket falhou (${resp.status}): ${out}`);
-  }
+  if (!resp.ok) rejectWhaticket("teste", resp.status);
 }
 
 // Auth Middleware
@@ -545,6 +561,9 @@ const authenticate = (req: any, res: any, next: any) => {
 
 // Auth
 app.post("/api/login", async (req, res) => {
+  if (!allowLogin(clientIp(req))) {
+    return res.status(429).json({ error: "Muitas tentativas de login. Aguarde alguns minutos." });
+  }
   const emailRaw = String(req.body?.email ?? "").trim();
   const password = String(req.body?.password ?? "");
   const adminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
@@ -677,42 +696,30 @@ app.get("/api/registry", async (req, res) => {
 
 app.post("/api/registry", authenticate, async (req, res) => {
   try {
-    const data = req.body ?? {};
-    if (!String(data.nome ?? "").trim()) {
-      return res.status(400).json({ error: "Nome é obrigatório." });
-    }
-    if (!String(data.prioridade ?? "").trim()) {
-      return res.status(400).json({ error: "Prioridade é obrigatória." });
-    }
-    const item = await prisma.enxovalItem.create({
-      data
-    });
-    res.json(item);
+    const data = parseRegistryWrite(req.body ?? {});
+    const item = await prisma.enxovalItem.create({ data });
+    res.status(201).json(item);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Erro ao criar item.";
-    console.error("POST /api/registry:", err);
-    res.status(400).json({ error: msg });
+    console.error("POST /api/registry:", err instanceof InputError ? err.message : err);
+    res.status(httpStatus(err)).json({ error: err instanceof InputError ? err.message : "Erro ao criar item." });
   }
 });
 
 app.put("/api/registry/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   try {
-    // If it's a guest reservation, we only allow updating status and reservadoPor
-    // If it's an admin, we allow everything (but for now we simplify)
+    const data = parseRegistryWrite(req.body ?? {});
     const item = await prisma.enxovalItem.update({
       where: { id },
-      data: req.body
+      data,
     });
     res.json(item);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Erro ao atualizar item.";
-    console.error("PUT /api/registry:", err);
-    const code =
-      err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2025"
-        ? 404
-        : 400;
-    res.status(code).json({ error: msg });
+    console.error("PUT /api/registry:", err instanceof InputError ? err.message : err);
+    const missing =
+      err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2025";
+    const code = missing ? 404 : httpStatus(err);
+    res.status(code).json({ error: err instanceof InputError ? err.message : missing ? "Item não encontrado." : "Erro ao atualizar item." });
   }
 });
 
@@ -782,28 +789,31 @@ app.delete("/api/purchased/:id", authenticate, async (req, res) => {
 
 // Confirmação de presença no convite online
 app.post("/api/rsvp", async (req, res) => {
+  if (!allowRsvp(clientIp(req))) {
+    return res.status(429).json({ error: "Muitas confirmações em pouco tempo. Aguarde alguns minutos." });
+  }
   try {
-    const name = String(req.body?.name ?? "").trim().slice(0, 120);
-    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\D/g, "");
-    const attending = req.body?.attending === true;
-    const rawGuests = Number(req.body?.guests ?? (attending ? 1 : 0));
-    const guests = attending ? rawGuests : 0;
-    const message = String(req.body?.message ?? "").trim().slice(0, 1000);
-
-    if (!name) return res.status(400).json({ error: "Informe seu nome." });
-    if (whatsapp.length < 10 || whatsapp.length > 13) {
-      return res.status(400).json({ error: "Informe um WhatsApp válido com DDD." });
-    }
-    if (attending && (!Number.isInteger(guests) || guests < 1 || guests > 6)) {
-      return res.status(400).json({ error: "A quantidade de pessoas deve ser entre 1 e 6." });
+    const input = parseRsvpInput(req.body ?? {});
+    const settings = await prisma.settings.findUnique({ where: { id: "global" } });
+    if (settings && isRsvpClosed(settings.rsvpDeadline)) {
+      return res.status(403).json({ error: "O prazo para confirmar presença já encerrou." });
     }
 
-    const rsvp = await prisma.weddingRsvp.create({
-      data: { name, whatsapp, guests, attending, message: message || null },
-      select: { id: true, attending: true, guests: true, createdAt: true },
-    });
-    return res.status(201).json({ success: true, rsvp });
+    const select = { id: true, attending: true, guests: true } as const;
+    const existing = await prisma.weddingRsvp.findUnique({ where: { whatsapp: input.whatsapp }, select: { id: true } });
+    try {
+      const rsvp = existing
+        ? await prisma.weddingRsvp.update({ where: { whatsapp: input.whatsapp }, data: input, select })
+        : await prisma.weddingRsvp.create({ data: input, select });
+      return res.status(existing ? 200 : 201).json({ success: true, updated: Boolean(existing), rsvp });
+    } catch (err) {
+      const duplicate = err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002";
+      if (!duplicate) throw err;
+      const rsvp = await prisma.weddingRsvp.update({ where: { whatsapp: input.whatsapp }, data: input, select });
+      return res.status(200).json({ success: true, updated: true, rsvp });
+    }
   } catch (err) {
+    if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
     console.error("POST /api/rsvp:", err);
     return res.status(500).json({ error: "Não foi possível registrar sua resposta. Tente novamente." });
   }
@@ -811,23 +821,35 @@ app.post("/api/rsvp", async (req, res) => {
 
 app.get("/api/rsvps", authenticate, async (_req, res) => {
   try {
-    const [rsvps, total] = await Promise.all([
-      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "desc" } }),
+    const [items, total, attendingResponses, declined, guestSum] = await Promise.all([
+      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
       prisma.weddingRsvp.count(),
+      prisma.weddingRsvp.count({ where: { attending: true } }),
+      prisma.weddingRsvp.count({ where: { attending: false } }),
+      prisma.weddingRsvp.aggregate({ where: { attending: true }, _sum: { guests: true } }),
     ]);
-    const attending = rsvps.filter((item) => item.attending);
     res.json({
-      items: rsvps,
+      items,
       summary: {
         total,
-        attendingResponses: attending.length,
-        confirmedGuests: attending.reduce((sum, item) => sum + item.guests, 0),
-        declined: rsvps.filter((item) => !item.attending).length,
+        attendingResponses,
+        confirmedGuests: guestSum._sum.guests ?? 0,
+        declined,
       },
     });
   } catch (err) {
     console.error("GET /api/rsvps:", err);
     res.status(500).json({ error: "Não foi possível carregar as confirmações." });
+  }
+});
+
+app.delete("/api/rsvps/:id", authenticate, async (req, res) => {
+  try {
+    await prisma.weddingRsvp.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("DELETE /api/rsvps:", err);
+    res.status(404).json({ error: "Confirmação não encontrada." });
   }
 });
 
@@ -841,15 +863,35 @@ app.get("/api/reservations", authenticate, async (req, res) => {
 });
 
 app.post("/api/reservations", async (req, res) => {
+  if (!allowReservation(clientIp(req))) {
+    return res.status(429).json({ error: "Muitas reservas em pouco tempo. Aguarde alguns minutos." });
+  }
   try {
-    const reservation = await prisma.reservation.create({
-      data: req.body
+    const input = parseReservationInput(req.body ?? {});
+    const result = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.enxovalItem.updateMany({
+        where: { id: input.enxovalId, status: "Disponível" },
+        data: { status: "Reservado", reservadoPor: input.nome },
+      });
+      if (claimed.count !== 1) {
+        throw new InputError("Este presente não está mais disponível.", 409);
+      }
+      const item = await tx.enxovalItem.findUnique({ where: { id: input.enxovalId } });
+      const reservation = await tx.reservation.create({
+        data: {
+          enxovalId: input.enxovalId,
+          nome: input.nome,
+          whatsapp: input.whatsapp,
+          mensagem: input.mensagem,
+        },
+      });
+      return { reservation, item };
     });
-    // Also update the item status
-    const item = await prisma.enxovalItem.update({
-      where: { id: req.body.enxovalId },
-      data: { status: "Reservado", reservadoPor: req.body.nome }
-    });
+    const item = result.item;
+    const reservation = result.reservation;
+    if (!item) {
+      return res.status(404).json({ error: "Presente não encontrado." });
+    }
 
     const settings = await prisma.settings.findUnique({ where: { id: "global" } });
     if (settings) {
@@ -872,9 +914,9 @@ app.post("/api/reservations", async (req, res) => {
           },
           {
             itemNome: item.nome,
-            convidado: String(req.body.nome ?? ""),
-            whatsapp: String(req.body.whatsapp ?? ""),
-            mensagem: req.body.mensagem ? String(req.body.mensagem) : "",
+            convidado: input.nome,
+            whatsapp: input.whatsapp,
+            mensagem: input.mensagem ?? "",
           }
         );
       } catch (notifyErr) {
@@ -883,14 +925,18 @@ app.post("/api/reservations", async (req, res) => {
       }
     }
 
-    res.json(reservation);
+    res.status(201).json({ id: reservation.id, enxovalId: reservation.enxovalId, nome: reservation.nome });
   } catch (err) {
+    if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
     console.error("POST /api/reservations:", err);
     res.status(500).json({ error: "Erro ao criar reserva." });
   }
 });
 
 app.post("/api/pix-donations", async (req, res) => {
+  if (!allowPix(clientIp(req))) {
+    return res.status(429).json({ error: "Muitos avisos em pouco tempo. Aguarde alguns minutos." });
+  }
   try {
     const nome = String(req.body?.nome ?? "").trim();
     const whatsapp = String(req.body?.whatsapp ?? "").replace(/\D/g, "");
@@ -903,8 +949,11 @@ app.post("/api/pix-donations", async (req, res) => {
           ? rawValor
           : Number(String(rawValor).replace(/\s/g, "").replace(",", "."));
 
-    if (!nome) return res.status(400).json({ error: "Nome é obrigatório." });
-    if (!whatsapp) return res.status(400).json({ error: "WhatsApp é obrigatório." });
+    if (!nome || nome.length > 120) return res.status(400).json({ error: "Nome é obrigatório." });
+    if (whatsapp.length < 10 || whatsapp.length > 13) {
+      return res.status(400).json({ error: "Informe um WhatsApp válido com DDD." });
+    }
+    if (mensagem.length > 1000) return res.status(400).json({ error: "A mensagem é longa demais." });
     if (valor != null && !Number.isFinite(valor)) {
       return res.status(400).json({ error: "Valor do PIX inválido." });
     }
@@ -931,9 +980,8 @@ app.post("/api/pix-donations", async (req, res) => {
         { nome, whatsapp, valor, mensagem }
       );
     } catch (notifyErr) {
-      console.error("Falha ao enviar aviso de PIX via Whaticket:", notifyErr);
-      const msg = notifyErr instanceof Error ? notifyErr.message : "Falha no envio de WhatsApp.";
-      return res.status(400).json({ error: msg });
+      console.error("Falha ao enviar aviso de PIX via Whaticket:", notifyErr instanceof Error ? notifyErr.message : "falha");
+      return res.status(400).json({ error: "Não foi possível enviar o aviso de WhatsApp. Tente novamente." });
     }
 
     res.json({ success: true });
@@ -944,16 +992,24 @@ app.post("/api/pix-donations", async (req, res) => {
 });
 
 app.delete("/api/reservations/:id", authenticate, async (req, res) => {
-  const reservation = await prisma.reservation.findUnique({ where: { id: req.params.id } });
-  if (reservation) {
-    // Reset item status
-    await prisma.enxovalItem.update({
-      where: { id: reservation.enxovalId },
-      data: { status: "Disponível", reservadoPor: null }
+  try {
+    await prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUnique({ where: { id: req.params.id } });
+      if (!reservation) return;
+      await tx.reservation.delete({ where: { id: reservation.id } });
+      const remaining = await tx.reservation.count({ where: { enxovalId: reservation.enxovalId } });
+      if (remaining === 0) {
+        await tx.enxovalItem.updateMany({
+          where: { id: reservation.enxovalId, status: "Reservado" },
+          data: { status: "Disponível", reservadoPor: null },
+        });
+      }
     });
-    await prisma.reservation.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("DELETE /api/reservations:", err);
+    res.status(500).json({ error: "Erro ao cancelar reserva." });
   }
-  res.json({ success: true });
 });
 
 // Settings
@@ -977,6 +1033,7 @@ app.get("/api/settings", async (req, res) => {
     invitationMessage: settings.invitationMessage,
     rsvpDeadline: settings.rsvpDeadline,
     dressCode: settings.dressCode,
+    coupleStory: settings.coupleStory,
   });
 });
 
@@ -1086,6 +1143,7 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             invitationMessage: String(settings.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível."),
             rsvpDeadline: String(settings.rsvpDeadline ?? ""),
             dressCode: String(settings.dressCode ?? ""),
+            coupleStory: String(settings.coupleStory ?? "").slice(0, 2000),
           },
         });
       } else {
@@ -1146,12 +1204,18 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
         });
       }
 
-      if (rsvps.length > 0) {
+      const rsvpByPhone = new Map<string, any>();
+      for (const entry of rsvps) {
+        const phone = String(entry?.whatsapp ?? "").replace(/\D/g, "");
+        if (phone) rsvpByPhone.set(phone, entry);
+      }
+      const uniqueRsvps = [...rsvpByPhone.values()];
+      if (uniqueRsvps.length > 0) {
         await tx.weddingRsvp.createMany({
-          data: rsvps.map((r: any) => ({
+          data: uniqueRsvps.map((r: any) => ({
             id: String(r.id),
-            name: String(r.name ?? "Convidado"),
-            whatsapp: String(r.whatsapp ?? ""),
+            name: String(r.name ?? "Convidado").slice(0, 120),
+            whatsapp: String(r.whatsapp ?? "").replace(/\D/g, ""),
             guests: Math.max(0, Math.min(6, Number(r.guests ?? 0))),
             attending: Boolean(r.attending),
             message: r.message ? String(r.message).slice(0, 1000) : null,
@@ -1179,6 +1243,7 @@ app.post("/api/settings", authenticate, async (req, res) => {
     });
     res.json(settings);
   } catch (err) {
+    if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
     console.error("POST /api/settings:", err);
     res.status(400).json({ error: "Erro ao salvar configurações." });
   }
@@ -1207,8 +1272,7 @@ app.post("/api/whatsapp/test", authenticate, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("POST /api/whatsapp/test:", err);
-    const message = err instanceof Error ? err.message : "Falha no teste do WhatsApp.";
-    res.status(400).json({ error: message });
+    res.status(400).json({ error: "Não foi possível enviar o teste de WhatsApp. Confira número, URL e token." });
   }
 });
 

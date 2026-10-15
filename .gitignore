@@ -6,5 +6,6 @@ android/
 ios/
 .env
 .env.mobile
+scripts/seedEnxoval.ts
 *.log
 .DS_Store

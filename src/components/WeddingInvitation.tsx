@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { api } from '../api';
-import { CalendarDays, CheckCircle2, Clock3, Heart, MapPin, MessageCircle, Music2, Sparkles } from 'lucide-react';
+import { buildIcs, googleCalendarUrl, invitationUrl, isRsvpClosed } from '../../server/domain';
+import { CalendarDays, CheckCircle2, Clock3, Heart, MapPin, MessageCircle, Music2, Share2, Sparkles } from 'lucide-react';
 
 type InvitationSettings = {
   coupleNames: string;
@@ -14,6 +15,7 @@ type InvitationSettings = {
   invitationMessage: string;
   rsvpDeadline: string;
   dressCode: string;
+  coupleStory: string;
 };
 
 const defaults: InvitationSettings = {
@@ -27,6 +29,7 @@ const defaults: InvitationSettings = {
   invitationMessage: 'Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.',
   rsvpDeadline: '',
   dressCode: '',
+  coupleStory: '',
 };
 
 function formattedDate(date: string) {
@@ -46,6 +49,8 @@ export default function WeddingInvitation() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<'yes' | 'no' | null>(null);
   const [error, setError] = useState('');
+  const [shareNote, setShareNote] = useState('');
+  const sending = useRef(false);
 
   useEffect(() => {
     api.get('/settings').then((data) => {
@@ -62,29 +67,56 @@ export default function WeddingInvitation() {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : '';
 
-  const eventDate = useMemo(() => {
-    if (!settings.weddingDate) return null;
-    const [year, month, day] = settings.weddingDate.split('-').map(Number);
-    const [hour, minute] = (settings.ceremonyTime || '16:00').split(':').map(Number);
-    return new Date(year, month - 1, day, hour || 0, minute || 0);
-  }, [settings.weddingDate, settings.ceremonyTime]);
+  const location = settings.ceremonyAddress || settings.ceremonyVenue;
+  const shareUrl = invitationUrl(window.location.origin);
+  const calendarLink = useMemo(() => googleCalendarUrl({
+    coupleNames: settings.coupleNames,
+    weddingDate: settings.weddingDate,
+    ceremonyTime: settings.ceremonyTime || '16:00',
+    invitationMessage: settings.invitationMessage,
+    location,
+  }), [location, settings]);
+  const deadlineClosed = isRsvpClosed(settings.rsvpDeadline);
 
-  const calendarLink = useMemo(() => {
-    if (!eventDate) return '';
-    const end = new Date(eventDate.getTime() + 3 * 60 * 60 * 1000);
-    const toCalendar = (date: Date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-    const title = `Casamento - ${settings.coupleNames}`;
-    const details = settings.invitationMessage;
-    const location = settings.ceremonyAddress || settings.ceremonyVenue;
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${toCalendar(eventDate)}/${toCalendar(end)}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
-  }, [eventDate, settings]);
+  const downloadCalendar = () => {
+    const ics = buildIcs({
+      coupleNames: settings.coupleNames,
+      weddingDate: settings.weddingDate,
+      ceremonyTime: settings.ceremonyTime || '16:00',
+      invitationMessage: settings.invitationMessage,
+      location,
+    });
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'casamento.ics';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const shareInvite = async () => {
+    const payload = { title: `Casamento — ${settings.coupleNames}`, text: settings.invitationMessage, url: shareUrl };
+    try {
+      if (navigator.share) {
+        await navigator.share(payload);
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      setShareNote('Link do convite copiado.');
+    } catch {
+      setShareNote(shareUrl);
+    }
+  };
 
   const respond = async (attendance: 'yes' | 'no') => {
     setError('');
+    if (sending.current) return;
     if (!name.trim() || !whatsapp.trim()) {
       setError('Informe seu nome e WhatsApp para confirmar a resposta.');
       return;
     }
+    sending.current = true;
     setSubmitting(true);
     try {
       await api.post('/rsvp', {
@@ -98,6 +130,7 @@ export default function WeddingInvitation() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível enviar sua resposta. Tente novamente.');
     } finally {
+      sending.current = false;
       setSubmitting(false);
     }
   };
@@ -127,9 +160,23 @@ export default function WeddingInvitation() {
               { icon: Heart, label: 'Traje', value: settings.dressCode || 'Como preferir' },
             ].map(({ icon: Icon, label, value }) => <div key={label} className="rounded-2xl border border-[#e7ddd0] bg-white/65 p-4"><Icon className="mx-auto mb-2 text-[#aa8c67]" size={19} /><p className="text-[10px] uppercase tracking-[.18em] text-[#a18d77]">{label}</p><p className="mt-1 text-sm font-medium">{value}</p></div>)}
           </div>
-          <a href={calendarLink} target="_blank" rel="noreferrer" className="mt-7 inline-flex items-center gap-2 rounded-full bg-[#82694f] px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-white transition hover:bg-[#6c543d]"><CalendarDays size={16} /> Adicionar à agenda</a>
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a href={calendarLink} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#82694f] px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-white transition hover:bg-[#6c543d]"><CalendarDays size={16} /> Google Agenda</a>
+            <button type="button" onClick={downloadCalendar} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-[#82694f]">Arquivo de agenda</button>
+            <button type="button" onClick={() => void shareInvite()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d8c8ae] bg-white px-6 py-3 text-xs font-semibold uppercase tracking-[.16em] text-[#82694f]"><Share2 size={16} /> Compartilhar</button>
+          </div>
+          {shareNote && <p className="mt-3 text-sm text-[#806748]" role="status">{shareNote}</p>}
         </div>
       </section>
+
+      {settings.coupleStory.trim() && (
+        <section className="px-6 pb-6">
+          <div className="mx-auto max-w-3xl rounded-[2rem] border border-[#e5d8c8] bg-white px-7 py-8 text-center md:px-12">
+            <p className="text-xs uppercase tracking-[.25em] text-[#ad8b62]">Nossa história</p>
+            <p className="mt-4 whitespace-pre-line font-serif text-2xl leading-relaxed text-[#66513e]">{settings.coupleStory}</p>
+          </div>
+        </section>
+      )}
 
       <section className="px-6 pb-24">
         <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-2">
@@ -141,9 +188,11 @@ export default function WeddingInvitation() {
                 <CheckCircle2 className="mx-auto mb-3 text-[#7b8d68]" size={36} />
                 <p className="font-serif text-2xl">{result === 'yes' ? 'Presença confirmada!' : 'Resposta registrada'}</p>
                 <p className="mt-2 text-sm text-[#887b6d]">{result === 'yes' ? 'Obrigado por celebrar esse momento com a gente.' : 'Obrigado por nos avisar. Sentiremos sua falta!'}</p>
-                <button onClick={() => setResult(null)} className="mt-5 text-xs font-semibold uppercase tracking-widest text-[#9b7951] underline">Corrigir resposta</button>
+                <button type="button" onClick={() => setResult(null)} className="mt-5 min-h-11 text-xs font-semibold uppercase tracking-widest text-[#9b7951] underline">Atualizar resposta</button>
               </div>
-            ) : loading ? <p className="mt-7 text-sm text-[#887b6d]">Preparando o convite…</p> : (
+            ) : loading ? <p className="mt-7 text-sm text-[#887b6d]" role="status">Preparando o convite…</p> : deadlineClosed ? (
+              <p className="mt-7 rounded-2xl bg-[#f4f0e8] p-6 text-sm leading-relaxed text-[#66513e]" role="status">O prazo para confirmar presença encerrou em {formattedDate(settings.rsvpDeadline)}. Se precisar alterar sua resposta, fale diretamente com os noivos.</p>
+            ) : (
               <form className="mt-7 space-y-4" onSubmit={(event) => event.preventDefault()}>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">Seu nome completo<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoComplete="name" className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]" placeholder="Digite seu nome" /></label>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#887b6d]">WhatsApp<input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} required maxLength={24} inputMode="tel" autoComplete="tel" className="mt-2 w-full rounded-xl border border-[#e5d8c8] bg-[#fdfbf8] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#ad8b62]" placeholder="(34) 99999-9999" /></label>
@@ -155,7 +204,7 @@ export default function WeddingInvitation() {
                   <button type="button" disabled={submitting} onClick={() => void respond('no')} className="rounded-xl border border-[#d8c8ae] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[#82694f] disabled:opacity-50">Não poderei ir</button>
                 </div>
                 {settings.rsvpDeadline && <p className="text-xs text-[#9a8876]">Por favor, responda até {formattedDate(settings.rsvpDeadline)}.</p>}
-                <p className="text-[11px] leading-relaxed text-[#a09283]">Ao responder, você autoriza o uso desses dados para organização do evento e contato sobre o convite.</p>
+                <p className="text-[11px] leading-relaxed text-[#a09283]">Usamos nome, WhatsApp, quantidade de pessoas e recado só para organizar o casamento e falar com você sobre o convite. Uma nova resposta com o mesmo WhatsApp atualiza a anterior. Os noivos podem apagar esses dados no painel quando o evento terminar.</p>
               </form>
             )}
           </div>

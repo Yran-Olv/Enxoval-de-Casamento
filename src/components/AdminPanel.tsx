@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
+import { whatsappChatUrl } from '../../server/domain';
 import { ProdutoComprado, EnxovalItem, SettingsData } from '../types';
 import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2 } from 'lucide-react';
 
@@ -15,7 +16,7 @@ export default function AdminPanel() {
   };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'purchased' | 'registry' | 'reservations' | 'rsvps' | 'settings'>('registry');
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'settings'>('overview');
 
   // Data states
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
@@ -23,6 +24,9 @@ export default function AdminPanel() {
   const [reservations, setReservations] = useState<any[]>([]);
   const [rsvps, setRsvps] = useState<any[]>([]);
   const [rsvpSummary, setRsvpSummary] = useState({ total: 0, attendingResponses: 0, confirmedGuests: 0, declined: 0 });
+  const [rsvpQuery, setRsvpQuery] = useState('');
+  const [rsvpFilter, setRsvpFilter] = useState<'all' | 'yes' | 'no'>('all');
+  const [registryQuery, setRegistryQuery] = useState('');
   const defaultReservationTemplate =
     '🎁 Nova reserva no site ({couple})\n\n' +
     'Presente: {item}\n' +
@@ -262,11 +266,12 @@ export default function AdminPanel() {
   };
 
   const toggleSelectAllRegistry = () => {
-    if (registry.length === 0) return;
-    if (selectedRegistryIds.length === registry.length) {
+    const visible = registry.filter((item) => item.nome.toLowerCase().includes(registryQuery.trim().toLowerCase()));
+    if (visible.length === 0) return;
+    if (selectedRegistryIds.length === visible.length) {
       setSelectedRegistryIds([]);
     } else {
-      setSelectedRegistryIds(registry.map((r) => r.id));
+      setSelectedRegistryIds(visible.map((r) => r.id));
     }
   };
 
@@ -324,7 +329,7 @@ export default function AdminPanel() {
     }
     openConfirm({
       title: 'Importar backup completo',
-      message: 'Isso substituirá todos os dados atuais (enxoval, reservas, comprados, configurações e usuários). Deseja continuar?',
+      message: 'Isso substituirá todos os dados atuais (enxoval, reservas, comprados, confirmações, configurações e usuários). Deseja continuar?',
       confirmLabel: 'Importar e substituir',
       tone: 'danger',
       onConfirm: async () => {
@@ -354,7 +359,18 @@ export default function AdminPanel() {
   );
   const boughtProgress = registry.length ? Math.round((registryByStatus.bought / registry.length) * 100) : 0;
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-gold font-serif text-2xl animate-pulse">Verificando Acesso...</div>;
+  const registryQueryNorm = registryQuery.trim().toLowerCase();
+  const visibleRegistry = registryQueryNorm
+    ? registry.filter((item) => item.nome.toLowerCase().includes(registryQueryNorm))
+    : registry;
+  const rsvpQueryNorm = rsvpQuery.trim().toLowerCase();
+  const visibleRsvps = rsvps.filter((rsvp) => {
+    const matchesFilter = rsvpFilter === 'all' || (rsvpFilter === 'yes' ? rsvp.attending : !rsvp.attending);
+    const haystack = `${rsvp.name} ${rsvp.whatsapp} ${rsvp.message || ''}`.toLowerCase();
+    return matchesFilter && (!rsvpQueryNorm || haystack.includes(rsvpQueryNorm));
+  });
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-gold font-serif text-2xl animate-pulse" role="status">Verificando Acesso...</div>;
 
   if (!user) {
     return (
@@ -362,7 +378,7 @@ export default function AdminPanel() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass-card p-12 rounded-[40px] text-center max-w-md w-full"
+          className="glass-card w-full max-w-md rounded-[40px] p-6 text-center sm:p-12"
         >
           <div className="w-20 h-20 bg-gold/10 text-gold rounded-full flex items-center justify-center mx-auto mb-8">
             <Shield size={40} />
@@ -372,20 +388,24 @@ export default function AdminPanel() {
           
           <form onSubmit={handleLogin} className="space-y-4 text-left">
             <div className="space-y-2">
-              <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">E-mail</label>
+              <label htmlFor="admin-email" className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">E-mail</label>
               <input 
+                id="admin-email"
                 required 
                 type="email" 
+                autoComplete="username"
                 value={email} 
                 onChange={e => setEmail(e.target.value)}
                 className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
               />
             </div>
             <div className="space-y-2 relative">
-              <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Senha</label>
+              <label htmlFor="admin-password" className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Senha</label>
               <input 
+                id="admin-password"
                 required 
-                type={showPassword ? "text" : "password"} 
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
                 value={password} 
                 onChange={e => setPassword(e.target.value)}
                 className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm"
@@ -393,12 +413,13 @@ export default function AdminPanel() {
               <button 
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-6 bottom-4 text-gold/40 hover:text-gold"
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                className="absolute right-4 bottom-3 min-h-11 min-w-11 text-gold/40 hover:text-gold"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            {loginError && <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest text-center">{loginError}</p>}
+            {loginError && <p role="alert" className="text-center text-sm text-red-700">{loginError}</p>}
             <button
               type="submit"
               className="w-full py-4 bg-gold text-white rounded-2xl text-xs uppercase tracking-widest font-bold shadow-xl shadow-gold/20 flex items-center justify-center gap-3"
@@ -449,7 +470,7 @@ export default function AdminPanel() {
           <div className="flex items-center gap-3 px-6 py-3 bg-gold/5 rounded-full border border-gold/10">
             <span className="text-[10px] uppercase tracking-widest font-bold text-gold">{user.email}</span>
           </div>
-          <button onClick={handleLogout} className="p-3 text-gold/40 hover:text-gold transition-colors">
+          <button onClick={handleLogout} aria-label="Sair do painel" className="min-h-11 min-w-11 p-3 text-gold/40 hover:text-gold transition-colors">
             <LogOut size={20} />
           </button>
         </div>
@@ -458,6 +479,7 @@ export default function AdminPanel() {
       {/* Tabs */}
       <div className="flex flex-wrap gap-4 mb-12">
         {[
+          { id: 'overview', label: 'Visão geral', icon: Shield },
           { id: 'registry', label: 'Enxoval', icon: Gift },
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
           { id: 'reservations', label: 'Presentes reservados', icon: MessageSquare },
@@ -467,7 +489,7 @@ export default function AdminPanel() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-3 px-8 py-4 rounded-2xl text-[10px] uppercase tracking-widest font-bold transition-all border ${
+            className={`flex min-h-11 items-center gap-3 rounded-2xl border px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-all md:px-8 ${
               activeTab === tab.id ? 'bg-gold text-white border-gold shadow-lg shadow-gold/20' : 'bg-white/50 text-gold/60 border-gold/10 hover:border-gold/30'
             }`}
           >
@@ -481,7 +503,7 @@ export default function AdminPanel() {
       <div className="glass-card rounded-[40px] p-8 md:p-12">
         <div className="flex justify-between items-center mb-10">
           <h3 className="text-3xl font-serif">
-            {activeTab === 'registry' ? 'Lista de Desejos' : activeTab === 'purchased' ? 'Itens Adquiridos' : activeTab === 'reservations' ? 'Presentes Reservados' : activeTab === 'rsvps' ? 'Confirmações do Convite' : 'Configurações Gerais'}
+            {activeTab === 'overview' ? 'Visão geral' : activeTab === 'registry' ? 'Lista de presentes' : activeTab === 'purchased' ? 'Itens adquiridos' : activeTab === 'reservations' ? 'Presentes reservados' : activeTab === 'rsvps' ? 'Confirmações do convite' : 'Configurações gerais'}
           </h3>
           <div className="flex flex-wrap gap-4 justify-end">
             {activeTab === 'registry' && selectedRegistryIds.length > 0 && (
@@ -493,7 +515,7 @@ export default function AdminPanel() {
                 <Trash2 size={16} /> Excluir selecionados ({selectedRegistryIds.length})
               </button>
             )}
-            {activeTab !== 'reservations' && activeTab !== 'rsvps' && activeTab !== 'settings' && (
+            {activeTab !== 'reservations' && activeTab !== 'rsvps' && activeTab !== 'settings' && activeTab !== 'overview' && (
               <button
                 onClick={() => { setEditingItem(null); setFormData({}); setIsModalOpen(true); }}
                 className="flex items-center gap-2 px-6 py-3 bg-gold text-white rounded-xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20"
@@ -515,7 +537,30 @@ export default function AdminPanel() {
               ].map((stat) => <div key={stat.label} className="rounded-2xl border border-gold/10 bg-white/50 p-5"><p className="text-[10px] uppercase tracking-widest opacity-50">{stat.label}</p><p className="mt-2 font-serif text-3xl">{stat.value}</p></div>)}
             </div>
           )}
+          {activeTab === 'rsvps' && (
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row">
+              <label className="flex-1 text-sm">
+                <span className="sr-only">Buscar confirmação</span>
+                <input value={rsvpQuery} onChange={(e) => setRsvpQuery(e.target.value)} placeholder="Buscar por nome ou WhatsApp" className="w-full rounded-2xl border border-gold/10 bg-white/70 px-4 py-3 text-sm outline-none" />
+              </label>
+              <label className="text-sm">
+                <span className="sr-only">Filtrar respostas</span>
+                <select value={rsvpFilter} onChange={(e) => setRsvpFilter(e.target.value as 'all' | 'yes' | 'no')} className="min-h-11 w-full rounded-2xl border border-gold/10 bg-white/70 px-4 py-3 text-sm sm:w-auto">
+                  <option value="all">Todas</option>
+                  <option value="yes">Confirmados</option>
+                  <option value="no">Não poderão ir</option>
+                </select>
+              </label>
+            </div>
+          )}
           {activeTab === 'rsvps' && rsvps.length === 0 && <p className="mb-8 rounded-2xl bg-white/50 p-6 text-sm opacity-60">Ainda não há respostas. Compartilhe o link /convite com seus convidados.</p>}
+          {activeTab === 'rsvps' && rsvps.length > 0 && visibleRsvps.length === 0 && <p className="mb-8 text-sm opacity-60">Nenhuma resposta encontrada com esse filtro.</p>}
+          {activeTab === 'registry' && (
+            <label className="mb-6 block text-sm">
+              <span className="sr-only">Buscar presente</span>
+              <input value={registryQuery} onChange={(e) => setRegistryQuery(e.target.value)} placeholder="Buscar presente" className="w-full rounded-2xl border border-gold/10 bg-white/70 px-4 py-3 text-sm outline-none" />
+            </label>
+          )}
           {activeTab === 'registry' && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
               <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
@@ -538,6 +583,25 @@ export default function AdminPanel() {
                 <p className="text-[10px] uppercase tracking-widest opacity-50">Comprados</p>
                 <p className="text-3xl font-serif mt-2">{registryByStatus.bought} <span className="text-sm opacity-60">({boughtProgress}%)</span></p>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                { label: 'Presentes na lista', value: registry.length },
+                { label: 'Ainda disponíveis', value: registryByStatus.available },
+                { label: 'Reservados', value: registryByStatus.reserved },
+                { label: 'Pessoas confirmadas', value: rsvpSummary.confirmedGuests },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-2xl border border-gold/10 bg-white/50 p-5">
+                  <p className="text-[10px] uppercase tracking-widest opacity-50">{stat.label}</p>
+                  <p className="mt-2 font-serif text-3xl">{stat.value}</p>
+                </div>
+              ))}
+              <p className="sm:col-span-2 xl:col-span-4 text-sm leading-relaxed opacity-70">
+                O convite público fica em /convite. Reservas de presentes não significam pagamento confirmado: o PIX continua sendo um aviso enviado pelos convidados.
+              </p>
             </div>
           )}
 
@@ -642,7 +706,11 @@ export default function AdminPanel() {
                     <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem do convite</label>
                     <textarea rows={4} maxLength={1200} value={pixSettings.invitationMessage || ''} onChange={e => setPixSettings({ ...pixSettings, invitationMessage: e.target.value })} placeholder="Uma mensagem carinhosa para os convidados" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm resize-y" />
                   </div>
-                  <p className="rounded-2xl border border-gold/10 bg-gold/5 p-4 text-xs leading-relaxed opacity-70">O convite ficará disponível em <strong>/convite</strong>. Preencha os locais e endereços para habilitar os links do mapa.</p>
+                  <div className="space-y-2">
+                    <label htmlFor="couple-story" className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">História do casal (opcional)</label>
+                    <textarea id="couple-story" rows={4} maxLength={2000} value={pixSettings.coupleStory || ''} onChange={e => setPixSettings({ ...pixSettings, coupleStory: e.target.value })} placeholder="Um texto curto. Deixe em branco para não aparecer no convite." className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm resize-y" />
+                  </div>
+                  <p className="rounded-2xl border border-gold/10 bg-gold/5 p-4 text-xs leading-relaxed opacity-70">O convite ficará disponível em <strong>/convite</strong>. Preencha os locais e endereços para habilitar os links do mapa. A história só aparece se este campo tiver texto.</p>
                   <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
                     <Save size={16} /> Salvar Configurações Gerais
                   </button>
@@ -734,8 +802,23 @@ export default function AdminPanel() {
                 </div>
               )}
             </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
+          ) : activeTab === 'overview' ? null : (
+            <>
+            {activeTab === 'rsvps' && (
+              <div className="mb-6 space-y-3 md:hidden">
+                {visibleRsvps.map((rsvp) => (
+                  <article key={rsvp.id} className="rounded-2xl border border-gold/10 bg-white/70 p-4">
+                    <h4 className="font-serif text-xl">{rsvp.name}</h4>
+                    <p className="mt-1 text-sm">{rsvp.attending ? `Confirmado · ${rsvp.guests} ${rsvp.guests === 1 ? 'pessoa' : 'pessoas'}` : 'Não poderá comparecer'}</p>
+                    <a href={whatsappChatUrl(String(rsvp.whatsapp))} target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-11 items-center text-sm text-green-800 underline">{rsvp.whatsapp}</a>
+                    {rsvp.message && <p className="mt-2 text-sm opacity-70">{rsvp.message}</p>}
+                    <p className="mt-2 text-xs opacity-50">{new Date(rsvp.createdAt).toLocaleString('pt-BR')}</p>
+                    <button type="button" onClick={() => handleDelete(rsvp.id, '/rsvps')} className="mt-3 min-h-11 text-sm text-red-700">Apagar resposta</button>
+                  </article>
+                ))}
+              </div>
+            )}
+            <table className={`w-full border-collapse text-left ${activeTab === 'rsvps' ? 'hidden md:table' : ''}`}>
             <thead>
               {activeTab === 'rsvps' ? (
                 <tr className="border-b border-gold/10">
@@ -744,6 +827,7 @@ export default function AdminPanel() {
                   <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Resposta</th>
                   <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Pessoas</th>
                   <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Recebida em</th>
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Ações</th>
                 </tr>
               ) : (
               <tr className="border-b border-gold/10">
@@ -752,7 +836,7 @@ export default function AdminPanel() {
                     <input
                       ref={registryHeaderCheckboxRef}
                       type="checkbox"
-                      checked={registry.length > 0 && selectedRegistryIds.length === registry.length}
+                      checked={visibleRegistry.length > 0 && selectedRegistryIds.length === visibleRegistry.length}
                       onChange={toggleSelectAllRegistry}
                       className="h-4 w-4 rounded border-gold/30 text-gold focus:ring-gold"
                       title="Selecionar todos"
@@ -772,7 +856,7 @@ export default function AdminPanel() {
               )}
             </thead>
             <tbody className="divide-y divide-gold/5">
-              {activeTab === 'registry' && registry.map(item => (
+              {activeTab === 'registry' && visibleRegistry.map(item => (
                 <tr key={item.id} className="group hover:bg-gold/5 transition-colors">
                   <td className="py-6 pr-2 w-10 align-middle">
                     <input
@@ -822,14 +906,14 @@ export default function AdminPanel() {
                 </tr>
               ))}
 
-              {activeTab === 'rsvps' && rsvps.map(rsvp => (
+              {activeTab === 'rsvps' && visibleRsvps.map(rsvp => (
                 <tr key={rsvp.id} className="hover:bg-gold/5 transition-colors">
                   <td className="py-5 pr-4">
                     <div className="font-serif text-lg">{rsvp.name}</div>
                     {rsvp.message && <div className="mt-1 max-w-xs text-xs opacity-60">{rsvp.message}</div>}
                   </td>
                   <td className="py-5 pr-4">
-                    <a href={`https://wa.me/${String(rsvp.whatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-700 hover:underline text-xs">{rsvp.whatsapp}</a>
+                    <a href={whatsappChatUrl(String(rsvp.whatsapp))} target="_blank" rel="noreferrer" className="text-green-800 hover:underline text-xs">{rsvp.whatsapp}</a>
                   </td>
                   <td className="py-5 pr-4">
                     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-bold ${rsvp.attending ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
@@ -838,6 +922,9 @@ export default function AdminPanel() {
                   </td>
                   <td className="py-5 pr-4 text-sm">{rsvp.attending ? rsvp.guests : '—'}</td>
                   <td className="py-5 pr-4 text-xs opacity-60">{new Date(rsvp.createdAt).toLocaleString('pt-BR')}</td>
+                  <td className="py-5 text-right">
+                    <button type="button" onClick={() => handleDelete(rsvp.id, '/rsvps')} aria-label={`Apagar resposta de ${rsvp.name}`} className="min-h-11 min-w-11 p-2 text-red-700"><Trash2 size={16} /></button>
+                  </td>
                 </tr>
               ))}
 
@@ -850,7 +937,7 @@ export default function AdminPanel() {
                     </td>
                     <td className="py-6 pr-4 font-medium">{res.nome}</td>
                     <td className="py-6 pr-4">
-                      <a href={`https://wa.me/${res.whatsapp.replace(/\D/g, '')}`} target="_blank" className="flex items-center gap-2 text-green-600 hover:underline text-xs">
+                      <a href={whatsappChatUrl(String(res.whatsapp))} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-green-800 hover:underline text-xs">
                         <Phone size={12} /> {res.whatsapp}
                       </a>
                     </td>
@@ -862,6 +949,7 @@ export default function AdminPanel() {
               })}
             </tbody>
           </table>
+            </>
           )}
         </div>
       </div>
@@ -871,7 +959,7 @@ export default function AdminPanel() {
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-ink/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-2xl bg-beige p-12 rounded-[40px] shadow-2xl border border-gold/20">
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[40px] border border-gold/20 bg-beige p-6 shadow-2xl sm:p-12">
               <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-gold/40 hover:text-gold"><X size={24} /></button>
               <h3 className="text-4xl font-serif mb-10">{editingItem ? 'Editar' : 'Adicionar'} {activeTab === 'purchased' ? 'Produto' : 'Item'}</h3>
               

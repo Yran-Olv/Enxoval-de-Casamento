@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: "com.taiseyran.enxoval",
   appName: "Nosso Enxoval",
   webDir: "dist",
-  bundledWebRuntime: false,
   server: {
     androidScheme: "https",
     iosScheme: "https",

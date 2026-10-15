@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "postinstall": "tsx scripts/run-prisma.ts generate",
     "install:vps": "npm install --no-fund --no-audit --ignore-scripts && npm run db:generate",
     "db:generate": "tsx scripts/run-prisma.ts generate",
