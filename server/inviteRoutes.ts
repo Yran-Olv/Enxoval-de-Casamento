@@ -7,6 +7,7 @@ import {
   InputError,
   INVITE_PALETTES,
   applyInviteMeta,
+  buildInviteWebviewUrl,
   campaignTemplate,
   createInviteToken,
   decideInviteSend,
@@ -64,13 +65,19 @@ function dateLabel(iso: string): string {
   });
 }
 
-function messageFor(settings: SendSettings, guest: { name: string; token: string }, campaign: ReturnType<typeof parseInviteCampaign>, origin: string) {
+function messageFor(
+  settings: SendSettings,
+  guest: { name: string; token: string; whatsapp?: string },
+  campaign: ReturnType<typeof parseInviteCampaign>,
+  origin: string
+) {
   const place = settings.ceremonyVenue || settings.ceremonyAddress || "";
+  const webviewLink = buildInviteWebviewUrl(origin, guest);
   return renderInviteMessage(campaignTemplate(settings, campaign), {
     nome: guest.name,
     data: dateLabel(settings.weddingDate),
     horario: settings.ceremonyTime || "16:00",
-    link: `${origin}/c/${guest.token}`,
+    link: webviewLink,
     casal: settings.coupleNames || "o casal",
     local: place,
   });
@@ -234,6 +241,36 @@ export function registerInviteRoutes(
     return res.json({ guest });
   });
 
+  app.get("/api/invite-lookup", async (req, res) => {
+    if (!allowInviteRead(clientIp(req))) {
+      return res.status(429).json({ error: "Muitas consultas em pouco tempo. Aguarde alguns minutos." });
+    }
+    const phone = String(req.query.phone || "").replace(/\D/g, "");
+    if (!phone || phone.length < 8) {
+      return res.status(400).json({ error: "Telefone inválido para consulta." });
+    }
+    const normalized = phone.length === 10 || phone.length === 11 ? `55${phone}` : phone;
+    const digitsEnd = normalized.slice(-8);
+    const guest = await prisma.weddingGuest.findFirst({
+      where: {
+        OR: [
+          { whatsapp: normalized },
+          { whatsapp: phone },
+          { whatsapp: { endsWith: digitsEnd } },
+        ],
+      },
+      select: {
+        token: true,
+        name: true,
+        seats: true,
+        groupName: true,
+        rsvp: { select: { attending: true, guests: true, message: true, name: true } },
+      },
+    });
+    if (!guest) return res.status(404).json({ error: "Convidado não encontrado." });
+    return res.json({ guest });
+  });
+
   app.get("/api/guests", authenticate, async (_req, res) => {
     const guests = await prisma.weddingGuest.findMany({
       orderBy: { createdAt: "desc" },
@@ -292,7 +329,7 @@ export function registerInviteRoutes(
         : null;
       const sample = guest ?? { name: "Convidado", token: "pre-visualizacao" };
       const origin = publicOrigin(req);
-      const link = guest ? `${origin}/c/${guest.token}` : `${origin}/convite?preview=1`;
+      const link = guest ? buildInviteWebviewUrl(origin, guest) : `${origin}/convite?preview=1`;
       const message = renderInviteMessage(campaignTemplate(settings, campaign), {
         nome: sample.name,
         data: dateLabel(settings.weddingDate),

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyInviteMeta,
   buildInviteArtSvg,
+  buildInviteWebviewUrl,
   createInviteToken,
   decideInviteSend,
   isInviteToken,
@@ -194,5 +195,24 @@ test("readInviteContent carrega configurações visuais completas sem destruir d
   assert.deepEqual(content.sectionOrder, ["hero", "countdown", "video", "rsvp"]);
   assert.equal(content.menu.length, 1);
   assert.equal(content.menu[0].title, "Risoto de Cogumelos");
+});
+
+test("buildInviteWebviewUrl gera URL com token, whatsapp, nome e wa=1 para o WhatsApp Webview", () => {
+  const url = buildInviteWebviewUrl("https://taiseyran.com.br", {
+    token: "token-seguro-1234567890",
+    name: "Carolina & Thiago",
+    whatsapp: "5534999998888",
+  });
+  assert.match(url, /https:\/\/taiseyran\.com\.br\/c\/token-seguro-1234567890\?/);
+  assert.match(url, /whatsapp=5534999998888/);
+  assert.match(url, /nome=Carolina(\+|%20)%26(\+|%20)Thiago/);
+  assert.match(url, /wa=1/);
+
+  const fallback = buildInviteWebviewUrl("https://taiseyran.com.br", {
+    name: "Convidado Geral",
+  });
+  assert.match(fallback, /https:\/\/taiseyran\.com\.br\/convite\?/);
+  assert.match(fallback, /nome=Convidado(\+|%20)Geral/);
+  assert.match(fallback, /wa=1/);
 });
 

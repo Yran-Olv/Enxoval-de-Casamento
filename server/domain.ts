@@ -864,6 +864,28 @@ export function renderInviteMessage(template: string, vars: {
   return text;
 }
 
+export function buildInviteWebviewUrl(
+  origin: string,
+  guest: { token?: string; name?: string; whatsapp?: string }
+): string {
+  const cleanOrigin = String(origin || "").trim().replace(/\/+$/, "");
+  const basePath = guest.token ? `${cleanOrigin}/c/${guest.token}` : `${cleanOrigin}/convite`;
+  try {
+    const u = new URL(basePath);
+    if (guest.whatsapp) {
+      const digits = digitsOnly(guest.whatsapp);
+      if (digits) u.searchParams.set("whatsapp", digits);
+    }
+    if (guest.name?.trim()) {
+      u.searchParams.set("nome", guest.name.trim());
+    }
+    u.searchParams.set("wa", "1");
+    return u.href;
+  } catch {
+    return basePath;
+  }
+}
+
 export type GuestWrite = {
   name: string;
   whatsapp: string;

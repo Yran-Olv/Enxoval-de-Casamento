@@ -154,12 +154,19 @@ export class WhatsAppQueueService {
         return false;
       }
 
-      // Envia a mensagem via Zapo
+      // Envia a mensagem via Zapo (com botão interativo de Webview se houver link)
       try {
+        const urlMatch = candidate.content.match(/https?:\/\/[^\s]+/i);
+        const webviewUrl = urlMatch ? urlMatch[0] : undefined;
+
         const sendResult = await this.zapo.sendMessage(
           candidate.recipient,
           candidate.content,
-          candidate.idempotencyKey ? { id: candidate.idempotencyKey } : undefined
+          {
+            id: candidate.idempotencyKey || undefined,
+            webviewUrl,
+            webviewButtonText: "Abrir Convite 💌",
+          }
         );
 
         await this.prisma.whatsAppMessage.update({

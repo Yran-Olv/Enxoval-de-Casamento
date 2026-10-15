@@ -268,12 +268,16 @@ export class ZapoWhatsAppService {
   }
 
   /**
-   * Envia uma mensagem via WhatsApp.
+   * Envia uma mensagem via WhatsApp (suporta texto e botões interativos Webview cta_url).
    */
   async sendMessage(
     recipient: string,
     text: string,
-    options?: { id?: string }
+    options?: {
+      id?: string;
+      webviewUrl?: string;
+      webviewButtonText?: string;
+    }
   ): Promise<{ success: boolean; messageId: string; timestamp?: number }> {
     if (!this.client || this.state !== "connected") {
       throw new Error("WhatsApp não está conectado no momento.");
@@ -292,8 +296,49 @@ export class ZapoWhatsAppService {
 
     const toJid = `${normalizedDigits}@s.whatsapp.net`;
 
+    // Se houver webviewUrl, tenta enviar como mensagem interativa nativa (cta_url) em tela cheia (full)
+    if (options?.webviewUrl) {
+      try {
+        const btnLabel = String(options.webviewButtonText || "Abrir Convite 💌").slice(0, 20);
+        const interactiveMsg = {
+          interactiveMessage: {
+            body: { text },
+            nativeFlowMessage: {
+              buttons: [
+                {
+                  name: "cta_url",
+                  buttonParamsJson: JSON.stringify({
+                    display_text: btnLabel,
+                    url: options.webviewUrl,
+                    merchant_url: options.webviewUrl,
+                    webview_presentation: "full",
+                    webview_interaction: true,
+                  }),
+                },
+              ],
+              messageVersion: 1,
+              messageParamsJson: "{}",
+            },
+          },
+        };
+
+        const result = await this.client.message.send(toJid, interactiveMsg as any, {
+          id: options.id,
+        });
+
+        console.log(`[ZapoWhatsApp] Mensagem interativa Webview enviada para ${toJid} (url=${options.webviewUrl})`);
+        return {
+          success: true,
+          messageId: (result as any).id || (result as any).messageId || "",
+          timestamp: (result as any).timestamp,
+        };
+      } catch (err: any) {
+        console.warn(`[ZapoWhatsApp] Falha ao enviar botão interativo Webview, enviando fallback de texto: ${err?.message || err}`);
+      }
+    }
+
     try {
-      const result = await this.client.message.send(toJid, text, options);
+      const result = await this.client.message.send(toJid, text, { id: options?.id });
       return {
         success: true,
         messageId: (result as any).id || (result as any).messageId || "",

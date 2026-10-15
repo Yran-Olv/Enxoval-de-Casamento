@@ -377,9 +377,14 @@ export default function WeddingSectionsRenderer({
                 ) : (
                   <form onSubmit={(e) => e.preventDefault()} className="space-y-5 text-left">
                     <div>
-                      <label className="block text-xs uppercase font-bold tracking-wider opacity-70 mb-1.5">
-                        Seu Nome Completo *
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs uppercase font-bold tracking-wider opacity-70">
+                          Seu Nome Completo *
+                        </label>
+                        {name && (
+                          <span className="text-[10px] text-emerald-600 font-medium tracking-wide">✓ Preenchido via WhatsApp</span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={name}
@@ -392,9 +397,14 @@ export default function WeddingSectionsRenderer({
 
                     {!token && (
                       <div>
-                        <label className="block text-xs uppercase font-bold tracking-wider opacity-70 mb-1.5">
-                          WhatsApp (com DDD) *
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs uppercase font-bold tracking-wider opacity-70">
+                            WhatsApp (com DDD) *
+                          </label>
+                          {whatsapp && (
+                            <span className="text-[10px] text-emerald-600 font-medium tracking-wide">✓ Identificado</span>
+                          )}
+                        </div>
                         <input
                           type="tel"
                           value={whatsapp}

@@ -64,15 +64,20 @@ function readToken() {
 }
 
 export default function WeddingInvitation() {
-  const preview = new URLSearchParams(window.location.search).get('preview') === '1';
+  const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const preview = searchParams.get('preview') === '1';
+  const urlName = (searchParams.get('nome') || searchParams.get('name') || '').trim();
+  const urlPhone = (searchParams.get('whatsapp') || searchParams.get('phone') || searchParams.get('numero') || '').trim();
+  const isWaWebview = searchParams.get('wa') === '1' || Boolean(urlPhone || urlName);
+
   const token = readToken();
   const [settings, setSettings] = useState<InvitationSettings>(defaults);
   const [phase, setPhase] = useState<'sealed' | 'opening' | 'revealed'>('sealed');
-  const [guestName, setGuestName] = useState('');
+  const [guestName, setGuestName] = useState(urlName);
   const [seatLimit, setSeatLimit] = useState(6);
   const [tokenMissing, setTokenMissing] = useState(false);
-  const [name, setName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
+  const [name, setName] = useState(urlName);
+  const [whatsapp, setWhatsapp] = useState(urlPhone);
   const [guests, setGuests] = useState('1');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -82,6 +87,16 @@ export default function WeddingInvitation() {
   const [photo, setPhoto] = useState<number | null>(null);
   const sending = useRef(false);
   const palette = INVITE_PALETTES[settings.inviteTheme as InviteTheme] ?? INVITE_PALETTES.classico;
+
+  useEffect(() => {
+    if (urlName) {
+      setGuestName((prev) => prev || urlName);
+      setName((prev) => prev || urlName);
+    }
+    if (urlPhone) {
+      setWhatsapp((prev) => prev || urlPhone);
+    }
+  }, [urlName, urlPhone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +133,26 @@ export default function WeddingInvitation() {
   }, [preview]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      if (urlPhone) {
+        api.get(`/invite-lookup?phone=${encodeURIComponent(urlPhone)}`).then((data) => {
+          const guest = data?.guest;
+          if (guest) {
+            if (guest.name) {
+              setGuestName(guest.name);
+              setName(guest.rsvp?.name || guest.name);
+            }
+            setSeatLimit(Math.max(1, Math.min(12, Number(guest.seats) || 1)));
+            if (guest.rsvp) {
+              setResult(guest.rsvp.attending ? 'yes' : 'no');
+              setGuests(String(guest.rsvp.guests || 1));
+              setMessage(guest.rsvp.message || '');
+            }
+          }
+        }).catch(() => undefined);
+      }
+      return;
+    }
     api.get(`/invite/${token}`).then((data) => {
       const guest = data?.guest;
       if (!guest?.name) {
@@ -126,7 +160,8 @@ export default function WeddingInvitation() {
         return;
       }
       setGuestName(guest.name);
-      setName(guest.rsvp?.name || guest.name);
+      setName(guest.rsvp?.name || urlName || guest.name);
+      if (urlPhone) setWhatsapp(urlPhone);
       setSeatLimit(Math.max(1, Math.min(12, Number(guest.seats) || 1)));
       if (guest.rsvp) {
         setResult(guest.rsvp.attending ? 'yes' : 'no');
@@ -134,7 +169,7 @@ export default function WeddingInvitation() {
         setMessage(guest.rsvp.message || '');
       }
     }).catch(() => setTokenMissing(true));
-  }, [token]);
+  }, [token, urlPhone, urlName]);
 
   const [welcomeHearts, setWelcomeHearts] = useState(false);
 
@@ -232,6 +267,15 @@ export default function WeddingInvitation() {
       {tokenMissing && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-rose-600 text-white text-center py-2 px-4 text-xs font-semibold tracking-wider shadow">
           Não encontramos este convite personalizado. Exibindo convite geral.
+        </div>
+      )}
+      {isWaWebview && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-stone-900/90 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-white/10 pointer-events-none">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="tracking-wide">Aberto no WhatsApp</span>
+          {guestName && (
+            <span className="opacity-90">· Olá, <strong className="font-semibold text-white">{guestName}</strong>!</span>
+          )}
         </div>
       )}
       <WeddingSectionsRenderer
