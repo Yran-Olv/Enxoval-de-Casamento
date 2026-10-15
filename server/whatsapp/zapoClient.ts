@@ -122,6 +122,7 @@ export class ZapoWhatsAppService {
         "senderKey",
         "appState",
         "privacyToken",
+        "mailbox",
       ]);
 
       const sqliteBackend = createSqliteStore({ connection: this.sqliteConn });
@@ -136,8 +137,8 @@ export class ZapoWhatsAppService {
           senderKey: "sqlite",
           appState: "sqlite",
           messages: "none",
-          threads: "none",
-          contacts: "none",
+          threads: "sqlite",
+          contacts: "sqlite",
           privacyToken: "sqlite",
         },
       } as any);
@@ -394,6 +395,108 @@ export class ZapoWhatsAppService {
     } catch (err) {
       console.error("[ZapoWhatsApp] Erro no logout:", err);
       throw err;
+    }
+  }
+
+  /**
+   * Retorna os contatos e conversas sincronizados na sessão local do WhatsApp.
+   */
+  async getSyncedContacts(): Promise<Array<{
+    jid: string;
+    name: string;
+    phone: string;
+    pushName?: string;
+    lastUpdatedMs?: number;
+  }>> {
+    if (!this.sqliteConn) {
+      await this.initStore();
+    }
+    if (!this.sqliteConn) return [];
+
+    try {
+      const tableCheck = this.sqliteConn.get(
+        "SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='mailbox_contacts'"
+      ) as { count: number } | null;
+      if (!tableCheck || tableCheck.count === 0) {
+        return [];
+      }
+
+      const rows = (this.sqliteConn.all(
+        `SELECT jid, display_name, push_name, phone_number, last_updated_ms
+         FROM mailbox_contacts
+         WHERE session_id = 'default' AND jid NOT LIKE '%@g.us' AND jid NOT LIKE '%@newsletter'
+         ORDER BY last_updated_ms DESC`
+      ) || []) as Array<{
+        jid: string;
+        display_name: string | null;
+        push_name: string | null;
+        phone_number: string | null;
+        last_updated_ms: number | null;
+      }>;
+
+      let threadRows: Array<{ jid: string; name: string | null }> = [];
+      try {
+        threadRows = (this.sqliteConn.all(
+          `SELECT jid, name
+           FROM mailbox_threads
+           WHERE session_id = 'default' AND jid NOT LIKE '%@g.us' AND jid NOT LIKE '%@newsletter'`
+        ) || []) as Array<{ jid: string; name: string | null }>;
+      } catch {}
+
+      const threadNameMap = new Map<string, string>();
+      for (const t of threadRows) {
+        if (t.name) threadNameMap.set(t.jid, t.name);
+      }
+
+      const list: Array<{
+        jid: string;
+        name: string;
+        phone: string;
+        pushName?: string;
+        lastUpdatedMs?: number;
+      }> = [];
+
+      const seenPhones = new Set<string>();
+
+      for (const r of rows) {
+        const rawPhone = r.phone_number || r.jid.replace(/@.+$/, "");
+        const clean = rawPhone.replace(/\D/g, "");
+        if (!clean || clean.length < 8) continue;
+        const normalized = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        if (seenPhones.has(normalized)) continue;
+        seenPhones.add(normalized);
+
+        const threadName = threadNameMap.get(r.jid);
+        const name = (r.display_name?.trim() || r.push_name?.trim() || threadName?.trim() || "").trim();
+
+        list.push({
+          jid: r.jid,
+          name,
+          phone: normalized,
+          pushName: r.push_name || undefined,
+          lastUpdatedMs: r.last_updated_ms || undefined,
+        });
+      }
+
+      for (const t of threadRows) {
+        const rawPhone = t.jid.replace(/@.+$/, "");
+        const clean = rawPhone.replace(/\D/g, "");
+        if (!clean || clean.length < 8) continue;
+        const normalized = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        if (seenPhones.has(normalized)) continue;
+        seenPhones.add(normalized);
+
+        list.push({
+          jid: t.jid,
+          name: t.name?.trim() || "",
+          phone: normalized,
+        });
+      }
+
+      return list;
+    } catch (err) {
+      console.error("[ZapoWhatsApp] Erro ao buscar contatos sincronizados:", err);
+      return [];
     }
   }
 }

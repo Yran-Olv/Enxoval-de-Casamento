@@ -24,7 +24,10 @@ import {
   RefreshCw,
   X,
   UserCheck,
+  Phone,
+  Users,
 } from 'lucide-react';
+import AdminWhatsAppContacts from './AdminWhatsAppContacts';
 
 type Attempt = { id: string; campaign: string; status: string; createdAt: string };
 type Guest = {
@@ -88,6 +91,7 @@ export default function AdminGuests({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sendingGuestId, setSendingGuestId] = useState<string | null>(null);
+  const [subTab, setSubTab] = useState<'guests' | 'whatsapp_contacts'>('guests');
 
   const load = () =>
     api
@@ -231,32 +235,76 @@ export default function AdminGuests({
 
   return (
     <div className="space-y-8">
-      {/* Banner Explicativo do Envio Webview */}
-      <div className="rounded-3xl border border-gold/20 bg-gradient-to-br from-white/90 via-amber-50/30 to-white/80 p-6 shadow-sm backdrop-blur">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-500/20">
-              <Sparkles size={14} className="text-emerald-600" />
-              Botão Nativo WhatsApp Webview (cta_url) Ativo
-            </div>
-            <h3 className="font-serif text-2xl text-ink">Envio de Convites com Abertura Direta no WhatsApp</h3>
-            <p className="text-sm text-ink/70 max-w-3xl leading-relaxed">
-              Ao enviar um convite pelo sistema, o WhatsApp entrega a mensagem com um botão interativo oficial:{' '}
-              <strong className="text-ink font-semibold">"Abrir Convite 💌"</strong>. Quando o convidado clica, o convite abre em tela cheia diretamente dentro do aplicativo, sem sair da conversa, com o envelope endereçado com o nome dele e confirmação de presença (RSVP) já preenchida!
-            </p>
-          </div>
-          <div className="shrink-0 flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={() => void showPreview(visible[0])}
-              className="px-4 py-2.5 rounded-xl border border-gold/30 bg-white/70 hover:bg-white text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2 transition"
-            >
-              <Eye size={14} className="text-gold" /> Ver Exemplo do Botão
-            </button>
-          </div>
-        </div>
+      {/* Navegação entre Lista Oficial e Agenda do WhatsApp */}
+      <div className="flex flex-wrap items-center gap-3 pb-2 border-b border-gold/15">
+        <button
+          type="button"
+          onClick={() => setSubTab('guests')}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition ${
+            subTab === 'guests'
+              ? 'bg-gold text-white shadow-md shadow-gold/20'
+              : 'bg-white/60 text-ink/70 hover:bg-white hover:text-ink'
+          }`}
+        >
+          <Users size={16} /> Lista Oficial de Convidados ({guests.length})
+        </button>
 
-        <div className="mt-4 pt-4 border-t border-gold/10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs text-ink/75">
+        <button
+          type="button"
+          onClick={() => setSubTab('whatsapp_contacts')}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition ${
+            subTab === 'whatsapp_contacts'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+              : 'bg-white/60 text-ink/70 hover:bg-white hover:text-ink'
+          }`}
+        >
+          <Phone size={16} /> Agenda WhatsApp & Disparador Direto
+          <span className="ml-1 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold">
+            Novo
+          </span>
+        </button>
+      </div>
+
+      {subTab === 'whatsapp_contacts' ? (
+        <AdminWhatsAppContacts
+          onNotice={onNotice}
+          onSwitchToOfficialList={() => setSubTab('guests')}
+        />
+      ) : (
+        <>
+          {/* Banner Explicativo do Envio Webview */}
+          <div className="rounded-3xl border border-gold/20 bg-gradient-to-br from-white/90 via-amber-50/30 to-white/80 p-6 shadow-sm backdrop-blur">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-500/20">
+                  <Sparkles size={14} className="text-emerald-600" />
+                  Botão Nativo WhatsApp Webview (cta_url) Ativo
+                </div>
+                <h3 className="font-serif text-2xl text-ink">Envio de Convites com Abertura Direta no WhatsApp</h3>
+                <p className="text-sm text-ink/70 max-w-3xl leading-relaxed">
+                  Ao enviar um convite pelo sistema, o WhatsApp entrega a mensagem com um botão interativo oficial:{' '}
+                  <strong className="text-ink font-semibold">"Abrir Convite 💌"</strong>. Quando o convidado clica, o convite abre em tela cheia diretamente dentro do aplicativo, sem sair da conversa, com o envelope endereçado com o nome dele e confirmação de presença (RSVP) já preenchida!
+                </p>
+              </div>
+              <div className="shrink-0 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSubTab('whatsapp_contacts')}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-sm transition"
+                >
+                  <Phone size={14} /> Abrir Agenda WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void showPreview(visible[0])}
+                  className="px-4 py-2.5 rounded-xl border border-gold/30 bg-white/70 hover:bg-white text-xs font-bold uppercase tracking-wider text-ink flex items-center gap-2 transition"
+                >
+                  <Eye size={14} className="text-gold" /> Ver Exemplo do Botão
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-gold/10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs text-ink/75">
           <div className="flex items-start gap-2 bg-white/50 p-3 rounded-xl border border-gold/10">
             <Send size={16} className="text-emerald-600 shrink-0 mt-0.5" />
             <span><strong>Envio 1-Clique:</strong> Use o botão verde "Enviar WhatsApp" no cartão de qualquer convidado para disparo imediato.</span>
@@ -793,6 +841,8 @@ export default function AdminGuests({
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

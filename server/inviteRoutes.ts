@@ -112,6 +112,8 @@ async function postWhaticket(
 }
 
 import type { WhatsAppQueueService } from "./whatsapp/queue";
+import { zapoService } from "./whatsapp/zapoClient";
+import crypto from "crypto";
 
 export function registerInviteRoutes(
   app: Express,
@@ -379,6 +381,274 @@ export function registerInviteRoutes(
     } catch (err) {
       if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
       return res.status(400).json({ error: "Não foi possível enviar os convites." });
+    }
+  });
+
+  // --- Rotas de Contatos do WhatsApp & Disparador Direto ---
+
+  app.get("/api/admin/whatsapp/contacts", authenticate, async (_req, res) => {
+    try {
+      const zapoContacts = await zapoService.getSyncedContacts();
+      const [allGuests, sentMessages] = await Promise.all([
+        prisma.weddingGuest.findMany({
+          select: {
+            id: true,
+            name: true,
+            whatsapp: true,
+            status: true,
+            sentAt: true,
+            seats: true,
+            groupName: true,
+            token: true,
+            rsvp: { select: { attending: true, guests: true } },
+          },
+        }),
+        prisma.whatsAppMessage.findMany({
+          where: { status: "sent" },
+          select: { recipient: true, sentAt: true },
+          orderBy: { sentAt: "desc" },
+        }),
+      ]);
+
+      const guestByPhone = new Map<string, typeof allGuests[0]>();
+      for (const g of allGuests) {
+        const clean = g.whatsapp.replace(/\D/g, "");
+        const norm = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        guestByPhone.set(norm, g);
+      }
+
+      const sentHistory = new Map<string, Date>();
+      for (const m of sentMessages) {
+        const clean = m.recipient.replace(/\D/g, "");
+        const norm = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        if (!sentHistory.has(norm) && m.sentAt) {
+          sentHistory.set(norm, m.sentAt);
+        }
+      }
+
+      const contactsMap = new Map<string, {
+        phone: string;
+        name: string;
+        source: "whatsapp" | "guest_list" | "both";
+        isGuest: boolean;
+        guestId: string | null;
+        token: string | null;
+        alreadySent: boolean;
+        lastSentAt: string | null;
+        rsvp: { attending: boolean; guests: number } | null;
+        groupName?: string;
+        seats?: number;
+      }>();
+
+      // 1. Processa contatos obtidos via WhatsApp
+      for (const c of zapoContacts) {
+        const clean = c.phone.replace(/\D/g, "");
+        const norm = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        const g = guestByPhone.get(norm);
+        const lastSent = g?.sentAt || sentHistory.get(norm) || null;
+        const alreadySent = g?.status === "sent" || !!sentHistory.get(norm);
+        const name = g?.name || c.name || c.pushName || "";
+
+        contactsMap.set(norm, {
+          phone: norm,
+          name,
+          source: g ? "both" : "whatsapp",
+          isGuest: !!g,
+          guestId: g?.id || null,
+          token: g?.token || null,
+          alreadySent,
+          lastSentAt: lastSent ? new Date(lastSent).toISOString() : null,
+          rsvp: g?.rsvp || null,
+          groupName: g?.groupName,
+          seats: g?.seats,
+        });
+      }
+
+      // 2. Adiciona convidados cadastrados que não estavam na lista do WhatsApp
+      for (const g of allGuests) {
+        const clean = g.whatsapp.replace(/\D/g, "");
+        const norm = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+        if (!contactsMap.has(norm)) {
+          const lastSent = g.sentAt || sentHistory.get(norm) || null;
+          const alreadySent = g.status === "sent" || !!sentHistory.get(norm);
+          contactsMap.set(norm, {
+            phone: norm,
+            name: g.name,
+            source: "guest_list",
+            isGuest: true,
+            guestId: g.id,
+            token: g.token,
+            alreadySent,
+            lastSentAt: lastSent ? new Date(lastSent).toISOString() : null,
+            rsvp: g.rsvp || null,
+            groupName: g.groupName,
+            seats: g.seats,
+          });
+        }
+      }
+
+      const list = Array.from(contactsMap.values()).sort((a, b) => {
+        if (a.name && !b.name) return -1;
+        if (!a.name && b.name) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      const alreadySentCount = list.filter((c) => c.alreadySent).length;
+      const pendingCount = list.length - alreadySentCount;
+
+      res.json({
+        contacts: list,
+        total: list.length,
+        alreadySentCount,
+        pendingCount,
+        whatsappConnected: zapoService.getState() === "connected",
+        connectedPhone: zapoService.getPhone(),
+      });
+    } catch (err: any) {
+      console.error("[GET /api/admin/whatsapp/contacts] Erro:", err);
+      res.status(500).json({ error: err?.message || "Erro ao consultar contatos do WhatsApp." });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/contacts/send", authenticate, async (req, res) => {
+    if (!allowInviteSend(clientIp(req))) return res.status(429).json({ error: "Muitos envios em pouco tempo. Aguarde alguns minutos." });
+    try {
+      const numbers: string[] = Array.isArray(req.body?.numbers) ? req.body.numbers : [];
+      if (!numbers.length) {
+        return res.status(400).json({ error: "Informe ao menos um número de telefone para disparo." });
+      }
+
+      const names: Record<string, string> = req.body?.names || {};
+      const campaign = req.body?.campaign || "official";
+      const force = Boolean(req.body?.force);
+      const requestId = String(req.body?.requestId || crypto.randomUUID().replaceAll("-", "").slice(0, 20));
+
+      const results = [];
+      let sent = 0;
+      let skipped = 0;
+
+      for (const [idx, rawNum] of numbers.slice(0, 50).entries()) {
+        const clean = String(rawNum).replace(/\D/g, "");
+        if (!clean || clean.length < 8) {
+          results.push({ phone: rawNum, status: "failed", reason: "Número de telefone inválido." });
+          skipped++;
+          continue;
+        }
+
+        const normPhone = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+
+        // Localiza ou cria convidado para persistência do token do convite
+        let guest = await prisma.weddingGuest.findFirst({ where: { whatsapp: normPhone } });
+        if (!guest) {
+          const providedName = (names[rawNum] || names[normPhone] || "Convidado").trim().slice(0, 80);
+          guest = await prisma.weddingGuest.create({
+            data: {
+              token: createInviteToken(),
+              name: providedName || "Convidado",
+              whatsapp: normPhone,
+              groupName: "outros",
+              seats: 2,
+              notes: "Disparo rápido WhatsApp",
+              optedOut: false,
+              status: "pending",
+            },
+          });
+        }
+
+        // Se já foi enviado e force=false, avisa e pula
+        if (!force && guest.status === "sent") {
+          results.push({
+            phone: normPhone,
+            name: guest.name,
+            status: "skipped",
+            reason: "Já enviado anteriormente. Ative a opção de forçar reenvio se desejar reenviar.",
+          });
+          skipped++;
+          continue;
+        }
+
+        const deliveryResult = await deliver(
+          guest.id,
+          campaign,
+          force,
+          `${requestId}-${idx + 1}`,
+          publicOrigin(req)
+        );
+
+        if (deliveryResult.status === "sent") {
+          sent++;
+        } else {
+          skipped++;
+        }
+
+        results.push({
+          phone: normPhone,
+          name: guest.name,
+          ...deliveryResult,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+
+      res.json({
+        total: numbers.length,
+        sent,
+        skipped,
+        results,
+      });
+    } catch (err: any) {
+      console.error("[POST /api/admin/whatsapp/contacts/send] Erro:", err);
+      res.status(500).json({ error: err?.message || "Falha ao disparar convites." });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/contacts/import", authenticate, async (req, res) => {
+    try {
+      const contacts: Array<{ phone: string; name?: string; groupName?: string; seats?: number }> =
+        Array.isArray(req.body?.contacts) ? req.body.contacts : [];
+
+      if (!contacts.length) {
+        return res.status(400).json({ error: "Nenhum contato selecionado para importação." });
+      }
+
+      let imported = 0;
+      let alreadyExists = 0;
+
+      for (const item of contacts.slice(0, 100)) {
+        const clean = String(item.phone || "").replace(/\D/g, "");
+        if (!clean || clean.length < 8) continue;
+        const normPhone = clean.length === 10 || clean.length === 11 ? `55${clean}` : clean;
+
+        const existing = await prisma.weddingGuest.findFirst({ where: { whatsapp: normPhone } });
+        if (existing) {
+          alreadyExists++;
+          continue;
+        }
+
+        await prisma.weddingGuest.create({
+          data: {
+            token: createInviteToken(),
+            name: (item.name || "Convidado").trim().slice(0, 80) || "Convidado",
+            whatsapp: normPhone,
+            groupName: item.groupName || "amigos",
+            seats: item.seats || 2,
+            notes: "Importado da agenda do WhatsApp",
+            optedOut: false,
+            status: "pending",
+          },
+        });
+        imported++;
+      }
+
+      res.json({
+        success: true,
+        imported,
+        alreadyExists,
+        message: `${imported} contato(s) importado(s) para a lista oficial.${alreadyExists ? ` (${alreadyExists} já existiam).` : ""}`,
+      });
+    } catch (err: any) {
+      console.error("[POST /api/admin/whatsapp/contacts/import] Erro:", err);
+      res.status(500).json({ error: err?.message || "Falha ao importar contatos." });
     }
   });
 
