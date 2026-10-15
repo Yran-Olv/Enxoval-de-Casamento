@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type Re
 import { motion } from 'motion/react';
 import { api } from '../api';
 import InvitationEnvelope from './InvitationEnvelope';
+import FallingHearts from './FallingHearts';
 import {
   INVITE_PALETTES,
   coupleInitials,
@@ -134,11 +135,18 @@ export default function WeddingInvitation() {
     }).catch(() => setTokenMissing(true));
   }, [token]);
 
+  const [welcomeHearts, setWelcomeHearts] = useState(false);
+
   useEffect(() => {
     if (phase !== 'opening') return;
+    setWelcomeHearts(true);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const timer = window.setTimeout(() => setPhase('revealed'), reduce ? 0 : 1500);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => setPhase('revealed'), reduce ? 0 : 2300);
+    const heartsTimer = window.setTimeout(() => setWelcomeHearts(false), 9000);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(heartsTimer);
+    };
   }, [phase]);
 
   const location = settings.ceremonyAddress || settings.ceremonyVenue;
@@ -200,6 +208,9 @@ export default function WeddingInvitation() {
       <InvitationEnvelope
         theme={parseInviteTheme(settings.inviteTheme)}
         initials={coupleInitials(settings.coupleNames)}
+        coupleNames={settings.coupleNames}
+        weddingDate={settings.weddingDate}
+        ceremonyTime={settings.ceremonyTime}
         guestName={guestName}
         openingText={settings.openingText}
         phase={phase === 'opening' ? 'opening' : 'sealed'}
@@ -213,6 +224,7 @@ export default function WeddingInvitation() {
 
   return (
     <div style={{ background: palette.bg, color: palette.ink }}>
+      <FallingHearts active={welcomeHearts} theme={parseInviteTheme(settings.inviteTheme)} count={32} />
       {preview && <p className="px-4 py-3 text-center text-sm" style={{ background: palette.accent, color: palette.onAccent }} role="status">Pré-visualização. Nenhuma resposta será gravada.</p>}
       {tokenMissing && <p className="px-4 py-3 text-center text-sm" role="alert">Não encontramos este convite. Você ainda pode ver o convite geral.</p>}
       <section className="mx-auto flex min-h-[80vh] max-w-3xl flex-col items-center justify-center px-4 py-16 text-center">
