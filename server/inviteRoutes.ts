@@ -104,6 +104,8 @@ async function postWhaticket(
   }
 }
 
+import type { WhatsAppQueueService } from "./whatsapp/queue";
+
 export function registerInviteRoutes(
   app: Express,
   deps: {
@@ -113,9 +115,10 @@ export function registerInviteRoutes(
     allowInviteRead: (key: string) => boolean;
     allowInviteSend: (key: string) => boolean;
     buildWhaticketOptionalIds: (userId: string, queueId: string) => Record<string, number>;
+    whatsAppQueue?: WhatsAppQueueService;
   },
 ) {
-  const { prisma, authenticate, clientIp, allowInviteRead, allowInviteSend, buildWhaticketOptionalIds } = deps;
+  const { prisma, authenticate, clientIp, allowInviteRead, allowInviteSend, buildWhaticketOptionalIds, whatsAppQueue } = deps;
 
   async function deliver(guestId: string, campaignRaw: unknown, force: boolean, requestId: string, origin: string) {
     const campaign = parseInviteCampaign(campaignRaw);
@@ -150,23 +153,63 @@ export function registerInviteRoutes(
     }
 
     const settings = await prisma.settings.findUnique({ where: { id: "global" } });
-    if (!settings?.whaticketToken?.trim()) {
-      const reason = "Cadastre o token do Whaticket antes de enviar convites.";
-      await prisma.weddingGuest.update({ where: { id: guest.id }, data: { status: "failed", lastError: reason } });
-      await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "failed", requestId } });
-      return { id: guest.id, name: guest.name, status: "failed" as const, action: "return" as const, reason };
+    const isWhaticket = settings?.whatsappProvider === "whaticket";
+
+    if (isWhaticket) {
+      if (!settings?.whaticketToken?.trim()) {
+        const reason = "Cadastre o token do Whaticket antes de enviar convites.";
+        await prisma.weddingGuest.update({ where: { id: guest.id }, data: { status: "failed", lastError: reason } });
+        await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "failed", requestId } });
+        return { id: guest.id, name: guest.name, status: "failed" as const, action: "return" as const, reason };
+      }
+      try {
+        const body = messageFor(settings, guest, campaign, origin);
+        await postWhaticket(settings, guest.whatsapp, body, buildWhaticketOptionalIds);
+        await prisma.weddingGuest.update({
+          where: { id: guest.id },
+          data: { status: "sent", sentAt: new Date(), lastError: "" },
+        });
+        await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "sent", requestId } });
+        return { id: guest.id, name: guest.name, status: "sent" as const, action: "return" as const };
+      } catch (err) {
+        const message = err instanceof InputError ? err.message : "Não foi possível enviar a mensagem de WhatsApp.";
+        await prisma.weddingGuest.update({ where: { id: guest.id }, data: { status: "failed", lastError: message } });
+        await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "failed", requestId } });
+        return { id: guest.id, name: guest.name, status: "failed" as const, action: "return" as const, reason: message };
+      }
     }
+
+    // Fluxo Zapo (módulo nativo próprio)
     try {
-      const body = messageFor(settings, guest, campaign, origin);
-      await postWhaticket(settings, guest.whatsapp, body, buildWhaticketOptionalIds);
-      await prisma.weddingGuest.update({
-        where: { id: guest.id },
-        data: { status: "sent", sentAt: new Date(), lastError: "" },
-      });
-      await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "sent", requestId } });
-      return { id: guest.id, name: guest.name, status: "sent" as const, action: "return" as const };
+      const body = messageFor(settings || ({} as any), guest, campaign, origin);
+      if (whatsAppQueue) {
+        const queued = await whatsAppQueue.enqueue({
+          recipient: guest.whatsapp,
+          content: body,
+          type: "invite",
+          guestId: guest.id,
+          idempotencyKey: requestId,
+        });
+
+        const newStatus = queued.status === "failed_perm" ? "failed" : "sent";
+        await prisma.weddingGuest.update({
+          where: { id: guest.id },
+          data: { status: newStatus, sentAt: new Date(), lastError: queued.error || "" },
+        });
+        await prisma.weddingInviteAttempt.create({
+          data: { guestId: guest.id, campaign, status: newStatus, requestId },
+        });
+        return { id: guest.id, name: guest.name, status: newStatus as "sent" | "failed", action: "return" as const };
+      } else {
+        await prisma.weddingGuest.update({
+          where: { id: guest.id },
+          data: { status: "sent", sentAt: new Date(), lastError: "" },
+        });
+        await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "sent", requestId } });
+        return { id: guest.id, name: guest.name, status: "sent" as const, action: "return" as const };
+      }
     } catch (err) {
-      const message = err instanceof InputError ? err.message : "Não foi possível enviar a mensagem de WhatsApp.";
+      const message = err instanceof Error ? err.message : "Falha ao processar convite no WhatsApp.";
       await prisma.weddingGuest.update({ where: { id: guest.id }, data: { status: "failed", lastError: message } });
       await prisma.weddingInviteAttempt.create({ data: { guestId: guest.id, campaign, status: "failed", requestId } });
       return { id: guest.id, name: guest.name, status: "failed" as const, action: "return" as const, reason: message };

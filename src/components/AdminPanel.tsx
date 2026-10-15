@@ -7,6 +7,7 @@ import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageS
 import AdminGuests from './AdminGuests';
 import AdminInviteSettings from './AdminInviteSettings';
 import AdminVisualEditor from './AdminVisualEditor';
+import AdminWhatsAppZapo from './AdminWhatsAppZapo';
 
 export default function AdminPanel() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -19,7 +20,7 @@ export default function AdminPanel() {
   };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'guests' | 'siteEditor' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'guests' | 'siteEditor' | 'whatsapp' | 'settings'>('overview');
 
   // Data states
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
@@ -490,6 +491,7 @@ export default function AdminPanel() {
         {[
           { id: 'overview', label: 'Visão geral', icon: Shield },
           { id: 'siteEditor', label: 'Editor do Site', icon: Sparkles },
+          { id: 'whatsapp', label: 'WhatsApp', icon: Phone },
           { id: 'registry', label: 'Enxoval', icon: Gift },
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
           { id: 'reservations', label: 'Presentes reservados', icon: MessageSquare },
@@ -514,7 +516,23 @@ export default function AdminPanel() {
       <div className="glass-card rounded-[40px] p-8 md:p-12">
         <div className="flex justify-between items-center mb-10">
           <h3 className="text-3xl font-serif">
-            {activeTab === 'overview' ? 'Visão geral' : activeTab === 'siteEditor' ? 'Editor Visual Amorei Premium' : activeTab === 'registry' ? 'Lista de presentes' : activeTab === 'purchased' ? 'Itens adquiridos' : activeTab === 'reservations' ? 'Presentes reservados' : activeTab === 'rsvps' ? 'Confirmações do convite' : activeTab === 'guests' ? 'Lista de convidados' : 'Configurações gerais'}
+            {activeTab === 'overview'
+              ? 'Visão geral'
+              : activeTab === 'siteEditor'
+              ? 'Editor Visual Amorei Premium'
+              : activeTab === 'whatsapp'
+              ? 'WhatsApp do Enxoval'
+              : activeTab === 'registry'
+              ? 'Lista de presentes'
+              : activeTab === 'purchased'
+              ? 'Itens adquiridos'
+              : activeTab === 'reservations'
+              ? 'Presentes reservados'
+              : activeTab === 'rsvps'
+              ? 'Confirmações do convite'
+              : activeTab === 'guests'
+              ? 'Lista de convidados'
+              : 'Configurações gerais'}
           </h3>
           <div className="flex flex-wrap gap-4 justify-end">
             {activeTab === 'registry' && selectedRegistryIds.length > 0 && (
@@ -882,6 +900,8 @@ export default function AdminPanel() {
               onChange={setPixSettings}
               onSave={handleSavePix}
             />
+          ) : activeTab === 'whatsapp' ? (
+            <AdminWhatsAppZapo />
           ) : activeTab === 'guests' ? (
             <AdminGuests
               onNotice={showNotice}

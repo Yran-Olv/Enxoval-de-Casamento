@@ -116,6 +116,62 @@ model Settings {
   saveTheDateTemplate String @default("Olá, {nome}! Guarde esta data com carinho.\n\n📅 {data}, às {horario}\n\n{casal} vão se casar. O convite completo está aqui:\n{link}")
   reminderTemplate  String  @default("Olá, {nome}! Ainda não recebemos sua resposta para o casamento de {casal}.\n\n📅 {data} às {horario}\n\nAbra o convite e confirme sua presença:\n{link}")
   soonTemplate      String  @default("Olá, {nome}! O casamento de {casal} está chegando.\n\n📅 {data} às {horario}\n\nVeja os detalhes no seu convite:\n{link}")
+  whatsappProvider  String  @default("zapo")
+  smtpHost          String  @default("")
+  smtpPort          Int     @default(587)
+  smtpUser          String  @default("")
+  smtpPassEncrypted String  @default("")
+  smtpSecure        Boolean @default(false)
+  smtpFrom          String  @default("")
+  smtpTo            String  @default("")
+  smtpAlertsEnabled Boolean @default(false)
+  smtpMaxDailyAlerts Int    @default(3)
+  smtpMinIntervalMin Int    @default(30)
+  smtpDropToleranceMin Int  @default(2)
+  smtpSendRecovery  Boolean @default(true)
+}
+
+model WhatsAppMessage {
+  id             String    @id @default(uuid())
+  recipient      String
+  content        String
+  type           String    @default("invite")
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  lastAttemptAt  DateTime?
+  sentAt         DateTime?
+  error          String?
+  idempotencyKey String?   @unique
+  guestId        String?
+  reservationId  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([recipient])
+}
+
+model WhatsAppIncident {
+  id                String    @id @default(uuid())
+  startedAt         DateTime  @default(now())
+  endedAt           DateTime?
+  durationSec       Int?
+  reason            String    @default("")
+  reconnectAttempts Int       @default(0)
+  alertSent         Boolean   @default(false)
+  alertRecipient    String?
+  alertError        String?
+  createdAt         DateTime  @default(now())
+
+  @@index([startedAt])
+  @@index([endedAt])
+}
+
+model WhatsAppAlertDaily {
+  date      String   @id
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
 }
 
 model GuestPhoto {

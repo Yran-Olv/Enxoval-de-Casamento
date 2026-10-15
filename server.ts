@@ -31,6 +31,8 @@ import {
   readInviteContent,
 } from "./server/domain";
 import { registerInviteRoutes } from "./server/inviteRoutes";
+import { zapoService, WhatsAppQueueService, WhatsAppMonitorService } from "./server/whatsapp";
+import { EmailNotificationService, getSaoPauloDateString } from "./server/notifications/email";
 
 dotenv.config();
 applyDatabaseUrlToEnv();
@@ -41,6 +43,9 @@ if (!databaseUrl) {
 }
 const pool = new Pool({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+const emailService = new EmailNotificationService(prisma);
+const whatsAppQueue = new WhatsAppQueueService(prisma, zapoService);
+const whatsAppMonitor = new WhatsAppMonitorService(prisma, emailService, zapoService);
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "dev-only-secret-not-for-production");
 if (process.env.NODE_ENV === "production" && JWT_SECRET.length < 32) {
@@ -179,7 +184,7 @@ function parsePurchasedPayload(body: Record<string, unknown>) {
   return { nome, categoria, valor, dataCompra };
 }
 
-function parseSettingsPayload(body: Record<string, unknown>) {
+function parseSettingsPayload(body: Record<string, unknown>, currentSettings?: any) {
   const pixKey = String(body.pixKey ?? "").trim();
   const pixName = String(body.pixName ?? "").trim();
   const coupleNamesRaw = String(body.coupleNames ?? "").trim();
@@ -211,6 +216,25 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   const coupleStory = String(body.coupleStory ?? "").trim().slice(0, 2000);
   const invite = parseInviteSettings(body);
+
+  const whatsappProvider = String(body.whatsappProvider ?? "zapo").trim() === "whaticket" ? "whaticket" : "zapo";
+  const smtpHost = String(body.smtpHost ?? "").trim();
+  const smtpPort = Math.max(1, Math.min(65535, Number(body.smtpPort ?? 587)));
+  const smtpUser = String(body.smtpUser ?? "").trim();
+  const rawSmtpPass = String(body.smtpPassEncrypted ?? "").trim();
+  const smtpPassEncrypted =
+    rawSmtpPass === "••••••••" || !rawSmtpPass
+      ? (currentSettings?.smtpPassEncrypted ?? "")
+      : rawSmtpPass;
+  const smtpSecure = Boolean(body.smtpSecure ?? false);
+  const smtpFrom = String(body.smtpFrom ?? "").trim();
+  const smtpTo = String(body.smtpTo ?? "").trim();
+  const smtpAlertsEnabled = Boolean(body.smtpAlertsEnabled ?? false);
+  const smtpMaxDailyAlerts = Math.max(1, Math.min(100, Number(body.smtpMaxDailyAlerts ?? 3)));
+  const smtpMinIntervalMin = Math.max(1, Math.min(1440, Number(body.smtpMinIntervalMin ?? 30)));
+  const smtpDropToleranceMin = Math.max(0, Math.min(60, Number(body.smtpDropToleranceMin ?? 2)));
+  const smtpSendRecovery = Boolean(body.smtpSendRecovery ?? true);
+
   return {
     pixKey,
     pixName,
@@ -236,7 +260,147 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     dressCode,
     coupleStory,
     ...invite,
+    whatsappProvider,
+    smtpHost,
+    smtpPort,
+    smtpUser,
+    smtpPassEncrypted,
+    smtpSecure,
+    smtpFrom,
+    smtpTo,
+    smtpAlertsEnabled,
+    smtpMaxDailyAlerts,
+    smtpMinIntervalMin,
+    smtpDropToleranceMin,
+    smtpSendRecovery,
   };
+}
+
+async function dispatchReservationNotification(
+  settings: any,
+  payload: { itemNome: string; convidado: string; whatsapp: string; mensagem?: string; reservationId?: string }
+) {
+  if (settings?.whatsappProvider === "whaticket") {
+    return sendReservationToWhaticket(settings, payload);
+  }
+
+  const ownerNumber = (settings.whatsappNumber || "").replace(/\D/g, "");
+  const template = settings.whaticketTemplate?.trim() || DEFAULT_WHATSAPP_RESERVATION_TEMPLATE;
+  const pixKey = (settings.pixKey || "").trim() || "(cadastre a chave PIX no painel do site)";
+  const pixName = (settings.pixName || "").trim() || "(cadastre o titular no painel)";
+  const couple = (settings.coupleNames || "").trim() || "o casal";
+
+  // 1. Mensagem de aviso para os noivos
+  if (ownerNumber) {
+    const ownerMsg = template
+      .replace(/\{item\}/gi, payload.itemNome)
+      .replace(/\{nome\}/gi, payload.convidado)
+      .replace(/\{whatsapp\}/gi, payload.whatsapp)
+      .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+      .replace(/\{pixKey\}/gi, pixKey)
+      .replace(/\{pixName\}/gi, pixName)
+      .replace(/\{couple\}/gi, couple);
+
+    await whatsAppQueue.enqueue({
+      recipient: ownerNumber,
+      content: ownerMsg,
+      type: "reservation_alert",
+      reservationId: payload.reservationId,
+      idempotencyKey: payload.reservationId ? `res-owner-${payload.reservationId}` : undefined,
+    });
+  }
+
+  // 2. Mensagem de resposta para o convidado
+  const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
+  if (guestRaw) {
+    const guestBodyText =
+      (settings.guestReplyTemplate?.trim() || DEFAULT_WHATSAPP_GUEST_REPLY_TEMPLATE)
+        .replace(/\{item\}/gi, payload.itemNome)
+        .replace(/\{nome\}/gi, payload.convidado)
+        .replace(/\{whatsapp\}/gi, payload.whatsapp)
+        .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+        .replace(/\{pixKey\}/gi, pixKey)
+        .replace(/\{pixName\}/gi, pixName)
+        .replace(/\{couple\}/gi, couple);
+
+    await whatsAppQueue.enqueue({
+      recipient: guestRaw,
+      content: guestBodyText,
+      type: "reservation_reply",
+      reservationId: payload.reservationId,
+      idempotencyKey: payload.reservationId ? `res-guest-${payload.reservationId}` : undefined,
+    });
+
+    const guestPixMsg = (settings.guestPixTemplate?.trim() || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE)
+      .replace(/\{item\}/gi, payload.itemNome)
+      .replace(/\{nome\}/gi, payload.convidado)
+      .replace(/\{whatsapp\}/gi, payload.whatsapp)
+      .replace(/\{mensagem\}/gi, payload.mensagem?.trim() || "(sem recado)")
+      .replace(/\{pixKey\}/gi, pixKey)
+      .replace(/\{pixName\}/gi, pixName)
+      .replace(/\{couple\}/gi, couple);
+
+    await whatsAppQueue.enqueue({
+      recipient: guestRaw,
+      content: guestPixMsg,
+      type: "reservation_reply",
+      reservationId: payload.reservationId,
+      idempotencyKey: payload.reservationId ? `res-pix-${payload.reservationId}` : undefined,
+    });
+  }
+}
+
+async function dispatchPixDonationNotification(
+  settings: any,
+  payload: { nome: string; whatsapp: string; valor?: number; mensagem?: string }
+) {
+  if (settings?.whatsappProvider === "whaticket") {
+    return sendPixDonationToWhaticket(settings, payload);
+  }
+
+  const ownerNumber = (settings.whatsappNumber || "").replace(/\D/g, "");
+  const couple = (settings.coupleNames || "").trim() || "o casal";
+  const pixKey = (settings.pixKey || "").trim() || "(cadastre a chave PIX no painel do site)";
+  const valorFmt =
+    typeof payload.valor === "number" && Number.isFinite(payload.valor)
+      ? `R$ ${payload.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "Não informado";
+
+  if (ownerNumber) {
+    const bodyText =
+      "Novo aviso de doação PIX no site.\n" +
+      `Nome: ${payload.nome}\n` +
+      `WhatsApp: ${payload.whatsapp}\n` +
+      `Valor: ${valorFmt}\n` +
+      `Mensagem: ${payload.mensagem?.trim() || "(sem mensagem)"}`;
+
+    await whatsAppQueue.enqueue({
+      recipient: ownerNumber,
+      content: bodyText,
+      type: "pix_donation",
+    });
+  }
+
+  const guestRaw = String(payload.whatsapp ?? "").replace(/\D/g, "");
+  if (guestRaw) {
+    const thankYouText =
+      `Oi, ${payload.nome}! Muito obrigado pelo carinho com ${couple}. 💛\n\n` +
+      `Recebemos seu aviso de doação via PIX${valorFmt !== "Não informado" ? ` no valor de ${valorFmt}` : ""}.\n` +
+      `Isso ajuda muito na construção do nosso novo lar.\n\n` +
+      `Se você preferir, também pode comprar um item por conta própria e entregar aos noivos.`;
+
+    await whatsAppQueue.enqueue({
+      recipient: guestRaw,
+      content: thankYouText,
+      type: "pix_donation",
+    });
+
+    await whatsAppQueue.enqueue({
+      recipient: guestRaw,
+      content: pixKey,
+      type: "pix_donation",
+    });
+  }
 }
 
 function buildWhaticketOptionalIds(userIdRaw: string, queueIdRaw: string) {
@@ -578,6 +742,7 @@ registerInviteRoutes(app, {
   allowInviteRead,
   allowInviteSend,
   buildWhaticketOptionalIds,
+  whatsAppQueue,
 });
 
 // --- API Routes ---
@@ -952,32 +1117,15 @@ app.post("/api/reservations", async (req, res) => {
     const settings = await prisma.settings.findUnique({ where: { id: "global" } });
     if (settings) {
       try {
-        await sendReservationToWhaticket(
-          {
-            whatsappNumber: settings.whatsappNumber,
-            whaticketApiUrl: settings.whaticketApiUrl,
-            whaticketToken: settings.whaticketToken,
-            whaticketUserId: settings.whaticketUserId,
-            whaticketQueueId: settings.whaticketQueueId,
-            whaticketTemplate: settings.whaticketTemplate,
-            guestReplyTemplate: settings.guestReplyTemplate,
-            guestPixTemplate: settings.guestPixTemplate,
-            whaticketSign: settings.whaticketSign,
-            whaticketClose: settings.whaticketClose,
-            pixKey: settings.pixKey,
-            pixName: settings.pixName,
-            coupleNames: settings.coupleNames,
-          },
-          {
-            itemNome: item.nome,
-            convidado: input.nome,
-            whatsapp: input.whatsapp,
-            mensagem: input.mensagem ?? "",
-          }
-        );
+        await dispatchReservationNotification(settings, {
+          itemNome: item.nome,
+          convidado: input.nome,
+          whatsapp: input.whatsapp,
+          mensagem: input.mensagem ?? "",
+          reservationId: reservation.id,
+        });
       } catch (notifyErr) {
-        // Não bloqueia a reserva se API externa falhar.
-        console.error("Falha ao enviar aviso via Whaticket:", notifyErr);
+        console.error("Falha ao enviar aviso de reserva:", notifyErr);
       }
     }
 
@@ -1020,23 +1168,9 @@ app.post("/api/pix-donations", async (req, res) => {
     }
 
     try {
-      await sendPixDonationToWhaticket(
-        {
-          whatsappNumber: settings.whatsappNumber,
-          whaticketApiUrl: settings.whaticketApiUrl,
-          whaticketToken: settings.whaticketToken,
-          whaticketUserId: settings.whaticketUserId,
-          whaticketQueueId: settings.whaticketQueueId,
-          whaticketSign: settings.whaticketSign,
-          whaticketClose: settings.whaticketClose,
-          coupleNames: settings.coupleNames,
-          pixKey: settings.pixKey,
-          pixName: settings.pixName,
-        },
-        { nome, whatsapp, valor, mensagem }
-      );
+      await dispatchPixDonationNotification(settings, { nome, whatsapp, valor, mensagem });
     } catch (notifyErr) {
-      console.error("Falha ao enviar aviso de PIX via Whaticket:", notifyErr instanceof Error ? notifyErr.message : "falha");
+      console.error("Falha ao enviar aviso de PIX:", notifyErr instanceof Error ? notifyErr.message : "falha");
       return res.status(400).json({ error: "Não foi possível enviar o aviso de WhatsApp. Tente novamente." });
     }
 
@@ -1246,7 +1380,10 @@ app.get("/api/settings/admin", authenticate, async (req, res) => {
   if (!settings) {
     settings = await prisma.settings.create({ data: { id: "global" } });
   }
-  res.json(settings);
+  res.json({
+    ...settings,
+    smtpPassEncrypted: settings.smtpPassEncrypted ? "••••••••" : "",
+  });
 });
 
 app.get("/api/backup/export", authenticate, async (req, res) => {
@@ -1499,13 +1636,17 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
 
 app.post("/api/settings", authenticate, async (req, res) => {
   try {
-    const data = parseSettingsPayload(req.body ?? {});
+    const existing = await prisma.settings.findUnique({ where: { id: "global" } });
+    const data = parseSettingsPayload(req.body ?? {}, existing);
     const settings = await prisma.settings.upsert({
       where: { id: "global" },
       update: data,
       create: { id: "global", ...data }
     });
-    res.json(settings);
+    res.json({
+      ...settings,
+      smtpPassEncrypted: settings.smtpPassEncrypted ? "••••••••" : "",
+    });
   } catch (err) {
     if (err instanceof InputError) return res.status(err.status).json({ error: err.message });
     console.error("POST /api/settings:", err);
@@ -1521,28 +1662,168 @@ app.post("/api/whatsapp/test", authenticate, async (req, res) => {
     }
     const testMsg = String(req.body?.message ?? "").trim() ||
       "Teste de integração WhatsApp enviado com sucesso pelo painel do site.";
-    await sendWhaticketTestMessage(
-      {
-        whatsappNumber: settings.whatsappNumber,
-        whaticketApiUrl: settings.whaticketApiUrl,
-        whaticketToken: settings.whaticketToken,
-        whaticketUserId: settings.whaticketUserId,
-        whaticketQueueId: settings.whaticketQueueId,
-        whaticketSign: settings.whaticketSign,
-        whaticketClose: settings.whaticketClose,
-      },
-      testMsg
-    );
+
+    if (settings.whatsappProvider === "whaticket") {
+      await sendWhaticketTestMessage(
+        {
+          whatsappNumber: settings.whatsappNumber,
+          whaticketApiUrl: settings.whaticketApiUrl,
+          whaticketToken: settings.whaticketToken,
+          whaticketUserId: settings.whaticketUserId,
+          whaticketQueueId: settings.whaticketQueueId,
+          whaticketSign: settings.whaticketSign,
+          whaticketClose: settings.whaticketClose,
+        },
+        testMsg
+      );
+    } else {
+      const number = (settings.whatsappNumber || "").replace(/\D/g, "");
+      if (!number) {
+        return res.status(400).json({ error: "Configure o número de WhatsApp no painel para receber o teste." });
+      }
+      await whatsAppQueue.enqueue({
+        recipient: number,
+        content: testMsg,
+        type: "test",
+      });
+    }
     res.json({ success: true });
-  } catch (err) {
+  } catch (err: any) {
     console.error("POST /api/whatsapp/test:", err);
-    res.status(400).json({ error: "Não foi possível enviar o teste de WhatsApp. Confira número, URL e token." });
+    res.status(400).json({ error: err?.message || "Não foi possível enviar o teste de WhatsApp." });
+  }
+});
+
+// --- WhatsApp & SMTP Admin Routes ---
+
+app.get("/api/admin/whatsapp/status", authenticate, async (_req, res) => {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: "global" } });
+    const queueStats = await whatsAppQueue.getQueueStats();
+    const today = getSaoPauloDateString();
+    const alertRecord = await prisma.whatsAppAlertDaily.findUnique({ where: { date: today } });
+
+    res.json({
+      state: zapoService.getState(),
+      phone: zapoService.getPhone(),
+      qrCodeDataUrl: zapoService.getQrCode(),
+      lastConnectedAt: zapoService.getLastConnectedAt(),
+      lastDisconnectedAt: zapoService.getLastDisconnectedAt(),
+      lastDisconnectReason: zapoService.getLastDisconnectReason(),
+      isReconnecting: zapoService.getState() === "reconnecting",
+      requiresNewPairing: zapoService.getRequiresNewPairing(),
+      uptimeSeconds: zapoService.getUptimeSeconds(),
+      queueStats,
+      provider: settings?.whatsappProvider ?? "zapo",
+      dailyAlertCount: alertRecord?.count ?? 0,
+      dailyAlertLimit: settings?.smtpMaxDailyAlerts ?? 3,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao consultar status do WhatsApp." });
+  }
+});
+
+app.post("/api/admin/whatsapp/connect", authenticate, async (_req, res) => {
+  try {
+    zapoService.connect().catch((err) => {
+      console.error("[POST /api/admin/whatsapp/connect] Falha na conexão:", err?.message || err);
+    });
+    res.json({ success: true, message: "Conexão com WhatsApp iniciada." });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao iniciar conexão com WhatsApp." });
+  }
+});
+
+app.post("/api/admin/whatsapp/disconnect", authenticate, async (_req, res) => {
+  try {
+    await zapoService.disconnect();
+    res.json({ success: true, message: "WhatsApp desconectado." });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao desconectar WhatsApp." });
+  }
+});
+
+app.post("/api/admin/whatsapp/logout", authenticate, async (_req, res) => {
+  try {
+    await zapoService.logout();
+    res.json({ success: true, message: "Sessão encerrada e credenciais limpas." });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao encerrar sessão." });
+  }
+});
+
+app.get("/api/admin/whatsapp/queue", authenticate, async (req, res) => {
+  try {
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 50)));
+    const where: any = {};
+    if (status && status !== "all") {
+      where.status = status;
+    }
+    const [messages, total] = await Promise.all([
+      prisma.whatsAppMessage.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+      prisma.whatsAppMessage.count({ where }),
+    ]);
+    res.json({ messages, total });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao consultar fila de mensagens." });
+  }
+});
+
+app.post("/api/admin/whatsapp/queue/:id/retry", authenticate, async (req, res) => {
+  try {
+    const updated = await whatsAppQueue.retryMessage(req.params.id);
+    res.json({ success: true, message: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao reenviar mensagem." });
+  }
+});
+
+app.get("/api/admin/whatsapp/incidents", authenticate, async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 50)));
+    const incidents = await prisma.whatsAppIncident.findMany({
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+    res.json({ incidents });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Erro ao buscar histórico de incidentes." });
+  }
+});
+
+app.post("/api/admin/whatsapp/test-email", authenticate, async (req, res) => {
+  try {
+    const recipient = String(req.body?.recipient ?? "").trim();
+    const result = await emailService.sendTestEmail(recipient);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || "Falha no envio de teste SMTP." });
   }
 });
 
 // --- Vite Integration ---
 
 async function startServer() {
+  // Inicialização Zapo WhatsApp, Queue e Monitor
+  try {
+    const hasSession = await zapoService.initStore();
+    whatsAppQueue.start();
+    whatsAppMonitor.start();
+    if (hasSession) {
+      console.log("[ZapoWhatsApp] Restaurando sessão salva automaticamente...");
+      zapoService.connect().catch((err) => {
+        console.warn("[ZapoWhatsApp] Falha na auto-restauração inicial:", err?.message || err);
+      });
+    }
+  } catch (err) {
+    console.error("[ZapoWhatsApp] Falha ao inicializar serviço Zapo:", err);
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

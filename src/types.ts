@@ -88,5 +88,18 @@ export interface SettingsData {
   saveTheDateTemplate?: string;
   reminderTemplate?: string;
   soonTemplate?: string;
+  whatsappProvider?: 'zapo' | 'whaticket';
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPassEncrypted?: string;
+  smtpSecure?: boolean;
+  smtpFrom?: string;
+  smtpTo?: string;
+  smtpAlertsEnabled?: boolean;
+  smtpMaxDailyAlerts?: number;
+  smtpMinIntervalMin?: number;
+  smtpDropToleranceMin?: number;
+  smtpSendRecovery?: boolean;
 }
 
