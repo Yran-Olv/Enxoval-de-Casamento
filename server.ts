@@ -122,7 +122,7 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const receptionAddress = String(body.receptionAddress ?? "").trim().slice(0, 300);
   const invitationMessage = String(body.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.").trim().slice(0, 1200);
   const rsvpDeadlineRaw = String(body.rsvpDeadline ?? "").trim();
-  const rsvpDeadline = /^\\d{4}-\\d{2}-\\d{2}$/.test(rsvpDeadlineRaw) ? rsvpDeadlineRaw : "";
+  const rsvpDeadline = /^\d{4}-\d{2}-\d{2}$/.test(rsvpDeadlineRaw) ? rsvpDeadlineRaw : "";
   const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   return {
     pixKey,
@@ -747,7 +747,7 @@ app.delete("/api/purchased/:id", authenticate, async (req, res) => {
 app.post("/api/rsvp", async (req, res) => {
   try {
     const name = String(req.body?.name ?? "").trim().slice(0, 120);
-    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\\D/g, "");
+    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\D/g, "");
     const attending = req.body?.attending === true;
     const rawGuests = Number(req.body?.guests ?? (attending ? 1 : 0));
     const guests = attending ? rawGuests : 0;
