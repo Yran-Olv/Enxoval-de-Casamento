@@ -115,6 +115,15 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const guestPixTemplate = guestPixTemplateRaw || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE;
   const whaticketSign = Boolean(body.whaticketSign ?? true);
   const whaticketClose = Boolean(body.whaticketClose ?? false);
+  const ceremonyTime = String(body.ceremonyTime ?? "16:00").trim().slice(0, 5) || "16:00";
+  const ceremonyVenue = String(body.ceremonyVenue ?? "").trim().slice(0, 180);
+  const ceremonyAddress = String(body.ceremonyAddress ?? "").trim().slice(0, 300);
+  const receptionVenue = String(body.receptionVenue ?? "").trim().slice(0, 180);
+  const receptionAddress = String(body.receptionAddress ?? "").trim().slice(0, 300);
+  const invitationMessage = String(body.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.").trim().slice(0, 1200);
+  const rsvpDeadlineRaw = String(body.rsvpDeadline ?? "").trim();
+  const rsvpDeadline = /^\\d{4}-\\d{2}-\\d{2}$/.test(rsvpDeadlineRaw) ? rsvpDeadlineRaw : "";
+  const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   return {
     pixKey,
     pixName,
@@ -130,6 +139,14 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     guestPixTemplate,
     whaticketSign,
     whaticketClose,
+    ceremonyTime,
+    ceremonyVenue,
+    ceremonyAddress,
+    receptionVenue,
+    receptionAddress,
+    invitationMessage,
+    rsvpDeadline,
+    dressCode,
   };
 }
 
@@ -641,7 +658,7 @@ app.post("/api/registry", authenticate, async (req, res) => {
   }
 });
 
-app.put("/api/registry/:id", async (req, res) => {
+app.put("/api/registry/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   try {
     // If it's a guest reservation, we only allow updating status and reservadoPor
@@ -723,6 +740,57 @@ app.delete("/api/purchased/:id", authenticate, async (req, res) => {
   } catch (err) {
     console.error("DELETE /api/purchased:", err);
     res.status(500).json({ error: "Erro ao eliminar item." });
+  }
+});
+
+// Confirmação de presença no convite online
+app.post("/api/rsvp", async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? "").trim().slice(0, 120);
+    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\\D/g, "");
+    const attending = req.body?.attending === true;
+    const rawGuests = Number(req.body?.guests ?? (attending ? 1 : 0));
+    const guests = attending ? rawGuests : 0;
+    const message = String(req.body?.message ?? "").trim().slice(0, 1000);
+
+    if (!name) return res.status(400).json({ error: "Informe seu nome." });
+    if (whatsapp.length < 10 || whatsapp.length > 13) {
+      return res.status(400).json({ error: "Informe um WhatsApp válido com DDD." });
+    }
+    if (attending && (!Number.isInteger(guests) || guests < 1 || guests > 6)) {
+      return res.status(400).json({ error: "A quantidade de pessoas deve ser entre 1 e 6." });
+    }
+
+    const rsvp = await prisma.weddingRsvp.create({
+      data: { name, whatsapp, guests, attending, message: message || null },
+      select: { id: true, attending: true, guests: true, createdAt: true },
+    });
+    return res.status(201).json({ success: true, rsvp });
+  } catch (err) {
+    console.error("POST /api/rsvp:", err);
+    return res.status(500).json({ error: "Não foi possível registrar sua resposta. Tente novamente." });
+  }
+});
+
+app.get("/api/rsvps", authenticate, async (_req, res) => {
+  try {
+    const [rsvps, total] = await Promise.all([
+      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.weddingRsvp.count(),
+    ]);
+    const attending = rsvps.filter((item) => item.attending);
+    res.json({
+      items: rsvps,
+      summary: {
+        total,
+        attendingResponses: attending.length,
+        confirmedGuests: attending.reduce((sum, item) => sum + item.guests, 0),
+        declined: rsvps.filter((item) => !item.attending).length,
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/rsvps:", err);
+    res.status(500).json({ error: "Não foi possível carregar as confirmações." });
   }
 });
 
@@ -864,6 +932,14 @@ app.get("/api/settings", async (req, res) => {
     pixName: settings.pixName,
     coupleNames: settings.coupleNames,
     weddingDate: settings.weddingDate,
+    ceremonyTime: settings.ceremonyTime,
+    ceremonyVenue: settings.ceremonyVenue,
+    ceremonyAddress: settings.ceremonyAddress,
+    receptionVenue: settings.receptionVenue,
+    receptionAddress: settings.receptionAddress,
+    invitationMessage: settings.invitationMessage,
+    rsvpDeadline: settings.rsvpDeadline,
+    dressCode: settings.dressCode,
   });
 });
 
@@ -961,6 +1037,14 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             guestPixTemplate: String(settings.guestPixTemplate ?? DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE),
             whaticketSign: Boolean(settings.whaticketSign ?? true),
             whaticketClose: Boolean(settings.whaticketClose ?? false),
+            ceremonyTime: String(settings.ceremonyTime ?? "16:00"),
+            ceremonyVenue: String(settings.ceremonyVenue ?? ""),
+            ceremonyAddress: String(settings.ceremonyAddress ?? ""),
+            receptionVenue: String(settings.receptionVenue ?? ""),
+            receptionAddress: String(settings.receptionAddress ?? ""),
+            invitationMessage: String(settings.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível."),
+            rsvpDeadline: String(settings.rsvpDeadline ?? ""),
+            dressCode: String(settings.dressCode ?? ""),
           },
         });
       } else {
