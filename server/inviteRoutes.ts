@@ -36,6 +36,11 @@ type SendSettings = {
   soonTemplate: string;
 };
 
+function wantsInviteDocument(accept: string | undefined): boolean {
+  if (!accept) return true;
+  return accept.includes("text/html") || accept.includes("application/xhtml") || accept.includes("*/*");
+}
+
 function publicOrigin(req: Request): string {
   const configured = process.env.APP_URL?.trim();
   if (configured) {
@@ -324,14 +329,14 @@ export function registerInviteRoutes(
 
   app.get("/convite", (req, res, next) => {
     if (process.env.NODE_ENV !== "production") return next();
-    if (req.headers.accept && !req.headers.accept.includes("text/html")) return next();
+    if (!wantsInviteDocument(req.headers.accept)) return next();
     return sendInviteDocument(req, res);
   });
 
   app.get("/c/:token", (req, res, next) => {
     if (process.env.NODE_ENV !== "production") return next();
     if (!isInviteToken(req.params.token)) return next();
-    if (req.headers.accept && !req.headers.accept.includes("text/html")) return next();
+    if (!wantsInviteDocument(req.headers.accept)) return next();
     return sendInviteDocument(req, res);
   });
 }
