@@ -1,6 +1,6 @@
 # Nosso Enxoval (Tais & Yran)
 
-Site de lista de casamento: convidados reservam presentes e o casal gerencia enxoval, comprados, reservas e configurações no painel administrativo.
+Plataforma de casamento com convite online, contagem regressiva, confirmação de presença (RSVP), lista de presentes, acompanhamento do enxoval e painel administrativo.
 
 ---
 
@@ -14,7 +14,8 @@ Site de lista de casamento: convidados reservam presentes e o casal gerencia enx
 6. [Painel administrativo](#painel-administrativo)
 7. [App Android / iOS (Capacitor)](#app-android--ios-capacitor)
 8. [Desenvolvimento local](#desenvolvimento-local)
-9. [Problemas frequentes](#problemas-frequentes)
+9. [Convite online e confirmações](#convite-online-e-confirmações)
+10. [Problemas frequentes](#problemas-frequentes)
 
 ---
 
@@ -43,9 +44,9 @@ Crie o arquivo `.env` na raiz (pode copiar de um modelo se existir no repositór
 ```env
 APP_URL=http://IP-DO-SERVIDOR
 PORT=3010
-DB_PASS=yrandev
-JWT_SECRET=cole_um_secret_gerado
-ADMIN_PASSWORD=yrandev
+DB_PASS=gere_uma_senha_forte_para_o_banco
+JWT_SECRET=gere_com_openssl_rand_hex_32
+ADMIN_PASSWORD=gere_uma_senha_forte_para_o_painel
 ```
 
 Gerar `JWT_SECRET`:
@@ -62,18 +63,18 @@ PORT=3010
 
 DB_DIALECT=postgres
 DB_USER=enxoval
-DB_PASS=yrandev
+DB_PASS=gere_uma_senha_forte_para_o_banco
 DB_NAME=enxoval
 DB_PORT=5432
 
 JWT_SECRET=gere_com_openssl_rand_hex_32
-ADMIN_PASSWORD=yrandev
-ADMIN_EMAIL=sistemazapzap@gmail.com
+ADMIN_PASSWORD=gere_uma_senha_forte_para_o_painel
+ADMIN_EMAIL=seu-email@exemplo.com
 ```
 
 Opcional: em vez de `DB_*`, pode usar uma única linha `DATABASE_URL` (não é obrigatório no Compose atual).
 
-**Regras:** use `=` nas variáveis; não deixe valores obrigatórios vazios; evite caracteres estranhos nas senhas.
+**Segurança:** gere `JWT_SECRET` com `openssl rand -hex 32`, use senhas diferentes e fortes para banco e painel e não reutilize os exemplos literalmente. Em produção, o servidor recusa iniciar se `JWT_SECRET` tiver menos de 32 caracteres. Não publique o arquivo `.env`.
 
 ### 3. Subir os containers
 
@@ -198,8 +199,9 @@ docker compose up -d --build
 
 ## Painel administrativo
 
-- **Enxoval / Comprados / Reservas:** CRUD e métricas do enxoval.
-- **Configurações:** sub-abas — Conta admin, Geral/PIX, WhatsApp, Backup.
+- **Enxoval / Comprados / Presentes reservados:** cadastro, edição, métricas e acompanhamento de presentes.
+- **Confirmações:** lista de RSVPs, WhatsApp dos convidados, quantidade de pessoas confirmadas e recusas.
+- **Configurações:** conta admin, dados do casal, data e horário do casamento, locais e endereços da cerimônia/recepção, traje, texto do convite, prazo de confirmação, PIX, WhatsApp e backup.
 - **WhatsApp:** URL da API (ex.: `https://api.whaticketup.com.br/api/messages/send`), número de destino, chave da API e template de mensagem. Cada instalação pode apontar para um Whaticket diferente.
 - **Backup:** exportar/importar JSON (lista, reservas, comprados, configurações, usuários) para migrar VPS ou clonar para outro cliente.
 - **Guia técnico da integração WhatsApp:** veja `docs/WHATSAPP_API.md` para reutilizar em outros projetos.
@@ -258,6 +260,16 @@ npm run dev
 ```
 
 Abrir: `http://localhost:3000`
+
+---
+
+## Convite online e confirmações
+
+- A página pública do convite fica em `/convite` (por exemplo, `https://seu-dominio.com/convite`).
+- No painel `/admin`, abra **Configurações → Geral / PIX** para definir data, horário, mensagem, locais, endereços, traje e prazo de RSVP.
+- Os convidados podem responder **Estarei presente** ou **Não poderei ir**. A confirmação registra nome, WhatsApp, número de pessoas e recado; os dados aparecem na aba **Confirmações** do painel.
+- Os endereços do convite geram links para abrir o local no Google Maps, e o botão de agenda cria um evento no Google Calendar.
+- As confirmações também entram nos backups JSON exportados pelo painel. Faça um backup antes de atualizar ou migrar o servidor.
 
 ---
 

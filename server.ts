@@ -23,7 +23,10 @@ if (!databaseUrl) {
 const pool = new Pool({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "dev-only-secret-not-for-production");
+if (process.env.NODE_ENV === "production" && JWT_SECRET.length < 32) {
+  throw new Error("Defina JWT_SECRET com pelo menos 32 caracteres no ambiente de produção.");
+}
 
 if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
@@ -40,9 +43,43 @@ const authCookie = {
 
 app.use(express.json());
 app.use(cookieParser());
+const allowedOrigins = new Set<string>([
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
+]);
+if (process.env.NODE_ENV !== "production") {
+  [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+  ].forEach((origin) => allowedOrigins.add(origin));
+}
+if (process.env.APP_URL) {
+  try {
+    const configuredUrl = new URL(process.env.APP_URL);
+    allowedOrigins.add(configuredUrl.origin);
+    if (!configuredUrl.port && configuredUrl.protocol === "http:") {
+      allowedOrigins.add(`${configuredUrl.protocol}//${configuredUrl.hostname}:${process.env.PORT || "3010"}`);
+    }
+    const hostname = configuredUrl.hostname;
+    const alternateHostname = hostname.startsWith("www.") ? hostname.slice(4) : `www.${hostname}`;
+    const alternateUrl = new URL(configuredUrl.toString());
+    alternateUrl.hostname = alternateHostname;
+    allowedOrigins.add(alternateUrl.origin);
+  } catch {
+    console.warn("APP_URL inválida; confira a configuração de origem CORS.");
+  }
+}
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Requests same-origin and server-to-server may omit Origin.
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error("Origem não permitida pela política CORS."));
+    },
     credentials: true,
     exposedHeaders: ["X-Backup-Saved-Path", "X-Backup-Filename"],
   })
@@ -115,6 +152,15 @@ function parseSettingsPayload(body: Record<string, unknown>) {
   const guestPixTemplate = guestPixTemplateRaw || DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE;
   const whaticketSign = Boolean(body.whaticketSign ?? true);
   const whaticketClose = Boolean(body.whaticketClose ?? false);
+  const ceremonyTime = String(body.ceremonyTime ?? "16:00").trim().slice(0, 5) || "16:00";
+  const ceremonyVenue = String(body.ceremonyVenue ?? "").trim().slice(0, 180);
+  const ceremonyAddress = String(body.ceremonyAddress ?? "").trim().slice(0, 300);
+  const receptionVenue = String(body.receptionVenue ?? "").trim().slice(0, 180);
+  const receptionAddress = String(body.receptionAddress ?? "").trim().slice(0, 300);
+  const invitationMessage = String(body.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.").trim().slice(0, 1200);
+  const rsvpDeadlineRaw = String(body.rsvpDeadline ?? "").trim();
+  const rsvpDeadline = /^\d{4}-\d{2}-\d{2}$/.test(rsvpDeadlineRaw) ? rsvpDeadlineRaw : "";
+  const dressCode = String(body.dressCode ?? "").trim().slice(0, 120);
   return {
     pixKey,
     pixName,
@@ -130,6 +176,14 @@ function parseSettingsPayload(body: Record<string, unknown>) {
     guestPixTemplate,
     whaticketSign,
     whaticketClose,
+    ceremonyTime,
+    ceremonyVenue,
+    ceremonyAddress,
+    receptionVenue,
+    receptionAddress,
+    invitationMessage,
+    rsvpDeadline,
+    dressCode,
   };
 }
 
@@ -494,7 +548,7 @@ app.post("/api/login", async (req, res) => {
   const emailRaw = String(req.body?.email ?? "").trim();
   const password = String(req.body?.password ?? "");
   const adminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+  const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "admin123");
 
   try {
     // 1) Utilizadores na tabela User (ex.: criados pelo script de instalação)
@@ -511,7 +565,7 @@ app.post("/api/login", async (req, res) => {
 
     // 2) Admin de ambiente (.env): funciona sempre, mesmo com users na BD
     //    (antes só era aceite quando não havia nenhum user — isso bloqueava o login “documentado”.)
-    if (emailRaw.toLowerCase() === adminEmail && password === adminPassword) {
+    if (adminPassword && emailRaw.toLowerCase() === adminEmail && password === adminPassword) {
       const token = jwt.sign({ email: emailRaw, role: "admin" }, JWT_SECRET, { expiresIn: "24h" });
       res.cookie("token", token, authCookie);
       return res.json({ user: { email: emailRaw, role: "admin" } });
@@ -550,7 +604,7 @@ app.post("/api/admin/profile", authenticate, async (req: any, res) => {
     }
 
     const envAdminEmail = (process.env.ADMIN_EMAIL || "sistemazapzap@gmail.com").trim().toLowerCase();
-    const envAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+    const envAdminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "admin123");
 
     const tokenUserEmail = String(req.user?.email ?? "").trim().toLowerCase();
     let dbUser = req.user?.id
@@ -641,7 +695,7 @@ app.post("/api/registry", authenticate, async (req, res) => {
   }
 });
 
-app.put("/api/registry/:id", async (req, res) => {
+app.put("/api/registry/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   try {
     // If it's a guest reservation, we only allow updating status and reservadoPor
@@ -723,6 +777,57 @@ app.delete("/api/purchased/:id", authenticate, async (req, res) => {
   } catch (err) {
     console.error("DELETE /api/purchased:", err);
     res.status(500).json({ error: "Erro ao eliminar item." });
+  }
+});
+
+// Confirmação de presença no convite online
+app.post("/api/rsvp", async (req, res) => {
+  try {
+    const name = String(req.body?.name ?? "").trim().slice(0, 120);
+    const whatsapp = String(req.body?.whatsapp ?? "").replace(/\D/g, "");
+    const attending = req.body?.attending === true;
+    const rawGuests = Number(req.body?.guests ?? (attending ? 1 : 0));
+    const guests = attending ? rawGuests : 0;
+    const message = String(req.body?.message ?? "").trim().slice(0, 1000);
+
+    if (!name) return res.status(400).json({ error: "Informe seu nome." });
+    if (whatsapp.length < 10 || whatsapp.length > 13) {
+      return res.status(400).json({ error: "Informe um WhatsApp válido com DDD." });
+    }
+    if (attending && (!Number.isInteger(guests) || guests < 1 || guests > 6)) {
+      return res.status(400).json({ error: "A quantidade de pessoas deve ser entre 1 e 6." });
+    }
+
+    const rsvp = await prisma.weddingRsvp.create({
+      data: { name, whatsapp, guests, attending, message: message || null },
+      select: { id: true, attending: true, guests: true, createdAt: true },
+    });
+    return res.status(201).json({ success: true, rsvp });
+  } catch (err) {
+    console.error("POST /api/rsvp:", err);
+    return res.status(500).json({ error: "Não foi possível registrar sua resposta. Tente novamente." });
+  }
+});
+
+app.get("/api/rsvps", authenticate, async (_req, res) => {
+  try {
+    const [rsvps, total] = await Promise.all([
+      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.weddingRsvp.count(),
+    ]);
+    const attending = rsvps.filter((item) => item.attending);
+    res.json({
+      items: rsvps,
+      summary: {
+        total,
+        attendingResponses: attending.length,
+        confirmedGuests: attending.reduce((sum, item) => sum + item.guests, 0),
+        declined: rsvps.filter((item) => !item.attending).length,
+      },
+    });
+  } catch (err) {
+    console.error("GET /api/rsvps:", err);
+    res.status(500).json({ error: "Não foi possível carregar as confirmações." });
   }
 });
 
@@ -864,6 +969,14 @@ app.get("/api/settings", async (req, res) => {
     pixName: settings.pixName,
     coupleNames: settings.coupleNames,
     weddingDate: settings.weddingDate,
+    ceremonyTime: settings.ceremonyTime,
+    ceremonyVenue: settings.ceremonyVenue,
+    ceremonyAddress: settings.ceremonyAddress,
+    receptionVenue: settings.receptionVenue,
+    receptionAddress: settings.receptionAddress,
+    invitationMessage: settings.invitationMessage,
+    rsvpDeadline: settings.rsvpDeadline,
+    dressCode: settings.dressCode,
   });
 });
 
@@ -877,12 +990,13 @@ app.get("/api/settings/admin", authenticate, async (req, res) => {
 
 app.get("/api/backup/export", authenticate, async (req, res) => {
   try {
-    const [users, registry, purchased, reservations, settings] = await Promise.all([
+    const [users, registry, purchased, reservations, settings, rsvps] = await Promise.all([
       prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.enxovalItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.purchasedItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.reservation.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.settings.findUnique({ where: { id: "global" } }),
+      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
     const backup = {
@@ -895,6 +1009,7 @@ app.get("/api/backup/export", authenticate, async (req, res) => {
         purchased,
         reservations,
         settings,
+        rsvps,
       },
     };
 
@@ -934,9 +1049,11 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
     const registry = Array.isArray(data.registry) ? data.registry : [];
     const purchased = Array.isArray(data.purchased) ? data.purchased : [];
     const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+    const rsvps = Array.isArray(data.rsvps) ? data.rsvps : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings : null;
 
     await prisma.$transaction(async (tx) => {
+      await tx.weddingRsvp.deleteMany({});
       await tx.reservation.deleteMany({});
       await tx.purchasedItem.deleteMany({});
       await tx.enxovalItem.deleteMany({});
@@ -961,6 +1078,14 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             guestPixTemplate: String(settings.guestPixTemplate ?? DEFAULT_WHATSAPP_GUEST_PIX_TEMPLATE),
             whaticketSign: Boolean(settings.whaticketSign ?? true),
             whaticketClose: Boolean(settings.whaticketClose ?? false),
+            ceremonyTime: String(settings.ceremonyTime ?? "16:00"),
+            ceremonyVenue: String(settings.ceremonyVenue ?? ""),
+            ceremonyAddress: String(settings.ceremonyAddress ?? ""),
+            receptionVenue: String(settings.receptionVenue ?? ""),
+            receptionAddress: String(settings.receptionAddress ?? ""),
+            invitationMessage: String(settings.invitationMessage ?? "Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível."),
+            rsvpDeadline: String(settings.rsvpDeadline ?? ""),
+            dressCode: String(settings.dressCode ?? ""),
           },
         });
       } else {
@@ -1017,6 +1142,21 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             mensagem: r.mensagem ? String(r.mensagem) : null,
             dataReserva: r.dataReserva ? new Date(r.dataReserva) : new Date(),
             createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      if (rsvps.length > 0) {
+        await tx.weddingRsvp.createMany({
+          data: rsvps.map((r: any) => ({
+            id: String(r.id),
+            name: String(r.name ?? "Convidado"),
+            whatsapp: String(r.whatsapp ?? ""),
+            guests: Math.max(0, Math.min(6, Number(r.guests ?? 0))),
+            attending: Boolean(r.attending),
+            message: r.message ? String(r.message).slice(0, 1000) : null,
+            createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+            updatedAt: r.updatedAt ? new Date(r.updatedAt) : new Date(),
           })),
         });
       }

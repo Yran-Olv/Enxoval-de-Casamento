@@ -5,15 +5,17 @@ import Hero from './components/Hero';
 import PurchasedItems from './components/PurchasedItems';
 import RegistryList from './components/RegistryList';
 import AdminPanel from './components/AdminPanel';
+import WeddingInvitation from './components/WeddingInvitation';
 import { api } from './api';
 import { SettingsData } from './types';
 
-type Page = 'home' | 'purchased' | 'registry' | 'admin';
+type Page = 'home' | 'purchased' | 'registry' | 'admin' | 'invitation';
 
 function pageToPath(page: Page): string {
   if (page === 'admin') return '/admin';
   if (page === 'registry') return '/enxoval';
   if (page === 'purchased') return '/comprados';
+  if (page === 'invitation') return '/convite';
   return '/';
 }
 
@@ -21,6 +23,7 @@ function pathToPage(pathname: string): Page {
   if (pathname === '/admin' || pathname === '/admin/configuracoes/whatsapp') return 'admin';
   if (pathname === '/enxoval') return 'registry';
   if (pathname === '/comprados') return 'purchased';
+  if (pathname === '/convite') return 'invitation';
   return 'home';
 }
 
@@ -31,6 +34,7 @@ export default function App() {
     pixName: '',
     coupleNames: 'Tais & Yran',
     weddingDate: '2027-02-02',
+    ceremonyTime: '16:00',
   });
 
   const navigate = (page: Page) => {
@@ -56,6 +60,7 @@ export default function App() {
             pixName: data.pixName ?? '',
             coupleNames: data.coupleNames ?? 'Tais & Yran',
             weddingDate: data.weddingDate,
+            ceremonyTime: data.ceremonyTime ?? '16:00',
           });
         }
       } catch {
@@ -97,6 +102,7 @@ export default function App() {
                 weddingDate={settings.weddingDate}
                 weddingDateLabel={weddingDateLabel}
                 coupleNames={settings.coupleNames ?? 'Tais & Yran'}
+                ceremonyTime={settings.ceremonyTime ?? '16:00'}
               />
             </motion.div>
           )}
@@ -122,6 +128,12 @@ export default function App() {
               transition={{ duration: 0.5 }}
             >
               <RegistryList />
+            </motion.div>
+          )}
+
+          {currentPage === 'invitation' && (
+            <motion.div key="invitation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+              <WeddingInvitation />
             </motion.div>
           )}
 
