@@ -66,4 +66,26 @@ model Settings {
   guestPixTemplate   String @default("{pixKey}")
   whaticketSign     Boolean @default(true)
   whaticketClose    Boolean @default(false)
+  ceremonyTime      String  @default("16:00")
+  ceremonyVenue     String  @default("")
+  ceremonyAddress   String  @default("")
+  receptionVenue    String  @default("")
+  receptionAddress  String  @default("")
+  invitationMessage String  @default("Com muito amor, queremos compartilhar esse momento especial com você. Sua presença tornará nosso dia ainda mais inesquecível.")
+  rsvpDeadline      String  @default("")
+  dressCode         String  @default("")
+}
+
+model WeddingRsvp {
+  id        String   @id @default(uuid())
+  name      String
+  whatsapp  String
+  guests    Int      @default(1)
+  attending Boolean
+  message   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([attending])
 }
