@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { ProdutoComprado, EnxovalItem, SettingsData } from '../types';
-import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload } from 'lucide-react';
+import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2 } from 'lucide-react';
 
 export default function AdminPanel() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -15,12 +15,14 @@ export default function AdminPanel() {
   };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'purchased' | 'registry' | 'reservations' | 'settings'>('registry');
+  const [activeTab, setActiveTab] = useState<'purchased' | 'registry' | 'reservations' | 'rsvps' | 'settings'>('registry');
 
   // Data states
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
   const [registry, setRegistry] = useState<EnxovalItem[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
+  const [rsvps, setRsvps] = useState<any[]>([]);
+  const [rsvpSummary, setRsvpSummary] = useState({ total: 0, attendingResponses: 0, confirmedGuests: 0, declined: 0 });
   const defaultReservationTemplate =
     '🎁 Nova reserva no site ({couple})\n\n' +
     'Presente: {item}\n' +
@@ -120,15 +122,18 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      const [reg, pur, res, set] = await Promise.all([
+      const [reg, pur, res, set, rsvpData] = await Promise.all([
         api.get('/registry'),
         api.get('/purchased'),
         api.get('/reservations'),
-        api.get('/settings/admin')
+        api.get('/settings/admin'),
+        api.get('/rsvps')
       ]);
       setRegistry(reg);
       setPurchased(pur);
       setReservations(res);
+      setRsvps(Array.isArray(rsvpData?.items) ? rsvpData.items : []);
+      setRsvpSummary(rsvpData?.summary ?? { total: 0, attendingResponses: 0, confirmedGuests: 0, declined: 0 });
       setPixSettings(set);
     } catch (err) {
       console.error("Error fetching data:", err);
@@ -455,7 +460,8 @@ export default function AdminPanel() {
         {[
           { id: 'registry', label: 'Enxoval', icon: Gift },
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
-          { id: 'reservations', label: 'Reservas', icon: MessageSquare },
+          { id: 'reservations', label: 'Presentes reservados', icon: MessageSquare },
+          { id: 'rsvps', label: 'Confirmações', icon: CalendarDays },
           { id: 'settings', label: 'Configurações', icon: Database },
         ].map(tab => (
           <button
@@ -475,7 +481,7 @@ export default function AdminPanel() {
       <div className="glass-card rounded-[40px] p-8 md:p-12">
         <div className="flex justify-between items-center mb-10">
           <h3 className="text-3xl font-serif">
-            {activeTab === 'registry' ? 'Lista de Desejos' : activeTab === 'purchased' ? 'Itens Adquiridos' : activeTab === 'reservations' ? 'Reservas Recebidas' : 'Configurações Gerais'}
+            {activeTab === 'registry' ? 'Lista de Desejos' : activeTab === 'purchased' ? 'Itens Adquiridos' : activeTab === 'reservations' ? 'Presentes Reservados' : activeTab === 'rsvps' ? 'Confirmações do Convite' : 'Configurações Gerais'}
           </h3>
           <div className="flex flex-wrap gap-4 justify-end">
             {activeTab === 'registry' && selectedRegistryIds.length > 0 && (
@@ -487,7 +493,7 @@ export default function AdminPanel() {
                 <Trash2 size={16} /> Excluir selecionados ({selectedRegistryIds.length})
               </button>
             )}
-            {activeTab !== 'reservations' && activeTab !== 'settings' && (
+            {activeTab !== 'reservations' && activeTab !== 'rsvps' && activeTab !== 'settings' && (
               <button
                 onClick={() => { setEditingItem(null); setFormData({}); setIsModalOpen(true); }}
                 className="flex items-center gap-2 px-6 py-3 bg-gold text-white rounded-xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20"
@@ -499,6 +505,17 @@ export default function AdminPanel() {
         </div>
 
         <div className="overflow-x-auto">
+          {activeTab === 'rsvps' && (
+            <div className="grid grid-cols-2 gap-4 mb-8 xl:grid-cols-4">
+              {[
+                { label: 'Respostas recebidas', value: rsvpSummary.total },
+                { label: 'Confirmações positivas', value: rsvpSummary.attendingResponses },
+                { label: 'Convidados confirmados', value: rsvpSummary.confirmedGuests },
+                { label: 'Não poderão comparecer', value: rsvpSummary.declined },
+              ].map((stat) => <div key={stat.label} className="rounded-2xl border border-gold/10 bg-white/50 p-5"><p className="text-[10px] uppercase tracking-widest opacity-50">{stat.label}</p><p className="mt-2 font-serif text-3xl">{stat.value}</p></div>)}
+            </div>
+          )}
+          {activeTab === 'rsvps' && rsvps.length === 0 && <p className="mb-8 rounded-2xl bg-white/50 p-6 text-sm opacity-60">Ainda não há respostas. Compartilhe o link /convite com seus convidados.</p>}
           {activeTab === 'registry' && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
               <div className="rounded-2xl border border-gold/10 bg-white/50 p-5">
@@ -591,6 +608,41 @@ export default function AdminPanel() {
                     <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Data do Casamento</label>
                     <input type="date" required value={pixSettings.weddingDate || ''} onChange={e => setPixSettings({ ...pixSettings, weddingDate: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl focus:border-gold outline-none text-sm" />
                   </div>
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Horário da cerimônia</label>
+                      <input type="time" value={pixSettings.ceremonyTime || '16:00'} onChange={e => setPixSettings({ ...pixSettings, ceremonyTime: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Traje sugerido</label>
+                      <input type="text" maxLength={120} value={pixSettings.dressCode || ''} onChange={e => setPixSettings({ ...pixSettings, dressCode: e.target.value })} placeholder="Ex.: esporte fino" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Local da cerimônia</label>
+                    <input type="text" maxLength={180} value={pixSettings.ceremonyVenue || ''} onChange={e => setPixSettings({ ...pixSettings, ceremonyVenue: e.target.value })} placeholder="Nome da igreja ou espaço" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Endereço da cerimônia</label>
+                    <input type="text" maxLength={300} value={pixSettings.ceremonyAddress || ''} onChange={e => setPixSettings({ ...pixSettings, ceremonyAddress: e.target.value })} placeholder="Rua, número, cidade" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Local da recepção</label>
+                    <input type="text" maxLength={180} value={pixSettings.receptionVenue || ''} onChange={e => setPixSettings({ ...pixSettings, receptionVenue: e.target.value })} placeholder="Salão, sítio ou restaurante" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Endereço da recepção</label>
+                    <input type="text" maxLength={300} value={pixSettings.receptionAddress || ''} onChange={e => setPixSettings({ ...pixSettings, receptionAddress: e.target.value })} placeholder="Rua, número, cidade" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Confirmar presença até</label>
+                    <input type="date" value={pixSettings.rsvpDeadline || ''} onChange={e => setPixSettings({ ...pixSettings, rsvpDeadline: e.target.value })} className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 ml-4">Mensagem do convite</label>
+                    <textarea rows={4} maxLength={1200} value={pixSettings.invitationMessage || ''} onChange={e => setPixSettings({ ...pixSettings, invitationMessage: e.target.value })} placeholder="Uma mensagem carinhosa para os convidados" className="w-full px-6 py-4 bg-white/50 border border-gold/10 rounded-2xl outline-none text-sm resize-y" />
+                  </div>
+                  <p className="rounded-2xl border border-gold/10 bg-gold/5 p-4 text-xs leading-relaxed opacity-70">O convite ficará disponível em <strong>/convite</strong>. Preencha os locais e endereços para habilitar os links do mapa.</p>
                   <button type="submit" className="px-10 py-4 bg-gold text-white rounded-2xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20 flex items-center gap-2">
                     <Save size={16} /> Salvar Configurações Gerais
                   </button>
@@ -685,6 +737,15 @@ export default function AdminPanel() {
           ) : (
             <table className="w-full text-left border-collapse">
             <thead>
+              {activeTab === 'rsvps' ? (
+                <tr className="border-b border-gold/10">
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Convidado</th>
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">WhatsApp</th>
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Resposta</th>
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Pessoas</th>
+                  <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40">Recebida em</th>
+                </tr>
+              ) : (
               <tr className="border-b border-gold/10">
                 {activeTab === 'registry' && (
                   <th className="pb-6 w-10 pr-2 align-bottom">
@@ -708,6 +769,7 @@ export default function AdminPanel() {
                 </th>
                 <th className="pb-6 text-[10px] uppercase tracking-widest font-bold opacity-40 text-right">Ações</th>
               </tr>
+              )}
             </thead>
             <tbody className="divide-y divide-gold/5">
               {activeTab === 'registry' && registry.map(item => (
@@ -757,6 +819,25 @@ export default function AdminPanel() {
                       <button onClick={() => handleDelete(item.id, '/purchased')} className="p-2 text-red-400/40 hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
                     </div>
                   </td>
+                </tr>
+              ))}
+
+              {activeTab === 'rsvps' && rsvps.map(rsvp => (
+                <tr key={rsvp.id} className="hover:bg-gold/5 transition-colors">
+                  <td className="py-5 pr-4">
+                    <div className="font-serif text-lg">{rsvp.name}</div>
+                    {rsvp.message && <div className="mt-1 max-w-xs text-xs opacity-60">{rsvp.message}</div>}
+                  </td>
+                  <td className="py-5 pr-4">
+                    <a href={`https://wa.me/${String(rsvp.whatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-green-700 hover:underline text-xs">{rsvp.whatsapp}</a>
+                  </td>
+                  <td className="py-5 pr-4">
+                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-bold ${rsvp.attending ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                      <CheckCircle2 size={13} /> {rsvp.attending ? 'Confirmado' : 'Não poderá ir'}
+                    </span>
+                  </td>
+                  <td className="py-5 pr-4 text-sm">{rsvp.attending ? rsvp.guests : '—'}</td>
+                  <td className="py-5 pr-4 text-xs opacity-60">{new Date(rsvp.createdAt).toLocaleString('pt-BR')}</td>
                 </tr>
               ))}
 
