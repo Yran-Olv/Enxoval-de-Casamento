@@ -1,8 +1,8 @@
 import { motion } from 'motion/react';
-import { Heart, Gift, ShoppingBag, Lock } from 'lucide-react';
+import { Heart, Gift, ShoppingBag, Lock, Mail } from 'lucide-react';
 
 interface NavbarProps {
-  onNavigate: (page: 'home' | 'purchased' | 'registry' | 'admin') => void;
+  onNavigate: (page: 'home' | 'purchased' | 'registry' | 'admin' | 'invitation') => void;
   currentPage: string;
 }
 
@@ -11,6 +11,7 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
     { id: 'home', label: 'Início', icon: Heart },
     { id: 'registry', label: 'Enxoval', icon: Gift },
     { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
+    { id: 'invitation', label: 'Convite', icon: Mail },
     { id: 'admin', label: 'Admin', icon: Lock },
   ] as const;
 
@@ -30,6 +31,7 @@ export default function Navbar({ onNavigate, currentPage }: NavbarProps) {
           { id: 'home', label: 'Início', icon: Heart },
           { id: 'registry', label: 'Enxoval', icon: Gift },
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
+          { id: 'invitation', label: 'Convite', icon: Mail },
           { id: 'admin', label: 'Admin', icon: Lock },
         ].map((item) => (
           <button
