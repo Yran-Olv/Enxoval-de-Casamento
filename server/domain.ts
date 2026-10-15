@@ -260,8 +260,9 @@ export function detectAudio(buf: Buffer): { ext: string; mime: string } | null {
   return match ? { ext: match.ext, mime: match.mime } : null;
 }
 
-export const INVITE_THEMES = ["classico", "jardim", "editorial", "boho", "gala"] as const;
-export type InviteTheme = (typeof INVITE_THEMES)[number];
+export const INVITE_THEMES = ["boho", "romantico", "minimal", "editorial", "jardim", "gala"] as const;
+// "classico" permanece aceito para compatibilidade com configurações antigas.
+export type InviteTheme = (typeof INVITE_THEMES)[number] | "classico";
 export const INVITE_CAMPAIGNS = ["official", "save-the-date", "reminder", "soon"] as const;
 export type InviteCampaign = (typeof INVITE_CAMPAIGNS)[number];
 export const GUEST_GROUPS = ["familia", "amigos", "padrinhos", "outros"] as const;
@@ -289,6 +290,8 @@ export const INVITE_PALETTES: Record<InviteTheme, {
   onAccent: string;
 }> = {
   classico: { label: "Romântico clássico", bg: "#f6f0e7", paper: "#fffdf9", ink: "#3f332b", accent: "#7d6244", seal: "#6f5438", muted: "#7d6d5e", line: "#eadfd2", onAccent: "#fffaf4" },
+  romantico: { label: "Romântico", bg: "#fff5f3", paper: "#fffdfc", ink: "#49343a", accent: "#a56c7d", seal: "#865365", muted: "#8d7078", line: "#eedde2", onAccent: "#fffafc" },
+  minimal: { label: "Minimal moderno", bg: "#f5f5f3", paper: "#ffffff", ink: "#171717", accent: "#242424", seal: "#111111", muted: "#686868", line: "#dededb", onAccent: "#ffffff" },
   jardim: { label: "Jardim botânico", bg: "#eef3ee", paper: "#fbfdfb", ink: "#243128", accent: "#3f6b4e", seal: "#2f5a40", muted: "#5d6f62", line: "#d5e3d8", onAccent: "#f7fbf7" },
   editorial: { label: "Minimalista editorial", bg: "#f4f4f2", paper: "#ffffff", ink: "#161616", accent: "#111111", seal: "#111111", muted: "#5c5c5c", line: "#e4e4e4", onAccent: "#ffffff" },
   boho: { label: "Boho elegante", bg: "#f8f1e8", paper: "#fffaf5", ink: "#4a3328", accent: "#a15c38", seal: "#8d4d2e", muted: "#8a6d5b", line: "#eddccb", onAccent: "#fff8f3" },
@@ -304,7 +307,11 @@ const CAMPAIGN_FIELD: Record<InviteCampaign, "inviteTemplate" | "saveTheDateTemp
 
 export function parseInviteTheme(value: unknown): InviteTheme {
   const raw = String(value ?? "").trim();
-  return INVITE_THEMES.includes(raw as InviteTheme) ? (raw as InviteTheme) : "classico";
+  // Migra visualmente o antigo tema "classico" para o modelo Romântico sem alterar dados.
+  if (raw === "classico" || raw === "") return "romantico";
+  return INVITE_THEMES.includes(raw as (typeof INVITE_THEMES)[number])
+    ? (raw as (typeof INVITE_THEMES)[number])
+    : "romantico";
 }
 
 export function parseInviteCampaign(value: unknown): InviteCampaign {
