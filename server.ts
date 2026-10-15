@@ -953,12 +953,13 @@ app.get("/api/settings/admin", authenticate, async (req, res) => {
 
 app.get("/api/backup/export", authenticate, async (req, res) => {
   try {
-    const [users, registry, purchased, reservations, settings] = await Promise.all([
+    const [users, registry, purchased, reservations, settings, rsvps] = await Promise.all([
       prisma.user.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.enxovalItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.purchasedItem.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.reservation.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.settings.findUnique({ where: { id: "global" } }),
+      prisma.weddingRsvp.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
     const backup = {
@@ -971,6 +972,7 @@ app.get("/api/backup/export", authenticate, async (req, res) => {
         purchased,
         reservations,
         settings,
+        rsvps,
       },
     };
 
@@ -1010,9 +1012,11 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
     const registry = Array.isArray(data.registry) ? data.registry : [];
     const purchased = Array.isArray(data.purchased) ? data.purchased : [];
     const reservations = Array.isArray(data.reservations) ? data.reservations : [];
+    const rsvps = Array.isArray(data.rsvps) ? data.rsvps : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings : null;
 
     await prisma.$transaction(async (tx) => {
+      await tx.weddingRsvp.deleteMany({});
       await tx.reservation.deleteMany({});
       await tx.purchasedItem.deleteMany({});
       await tx.enxovalItem.deleteMany({});
@@ -1101,6 +1105,21 @@ app.post("/api/backup/import", authenticate, async (req, res) => {
             mensagem: r.mensagem ? String(r.mensagem) : null,
             dataReserva: r.dataReserva ? new Date(r.dataReserva) : new Date(),
             createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      if (rsvps.length > 0) {
+        await tx.weddingRsvp.createMany({
+          data: rsvps.map((r: any) => ({
+            id: String(r.id),
+            name: String(r.name ?? "Convidado"),
+            whatsapp: String(r.whatsapp ?? ""),
+            guests: Math.max(0, Math.min(6, Number(r.guests ?? 0))),
+            attending: Boolean(r.attending),
+            message: r.message ? String(r.message).slice(0, 1000) : null,
+            createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+            updatedAt: r.updatedAt ? new Date(r.updatedAt) : new Date(),
           })),
         });
       }
