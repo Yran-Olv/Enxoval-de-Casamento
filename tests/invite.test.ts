@@ -6,9 +6,17 @@ import {
   createInviteToken,
   decideInviteSend,
   isInviteToken,
+  parseCityGuide,
+  parseFaq,
   parseGallery,
+  parseGroomsmen,
   parseGuestWrite,
+  parseHotels,
+  parseInviteTheme,
+  parseMenu,
+  parseQuiz,
   parseRsvpInput,
+  readInviteContent,
   renderInviteMessage,
 } from "../server/domain";
 
@@ -90,3 +98,101 @@ test("arte do convite escapa texto e pode incluir o nome", () => {
   assert.match(svg, /Ana &lt;3/);
   assert.match(svg, /Jardim botânico/);
 });
+
+test("reconhece os 6 modelos de casamento e preserva compatibilidade", () => {
+  assert.equal(parseInviteTheme("boho"), "boho");
+  assert.equal(parseInviteTheme("romantico"), "romantico");
+  assert.equal(parseInviteTheme("minimal"), "minimal");
+  assert.equal(parseInviteTheme("editorial"), "editorial");
+  assert.equal(parseInviteTheme("jardim"), "jardim");
+  assert.equal(parseInviteTheme("gala"), "gala");
+  // Legado clássico mapeia para romântico
+  assert.equal(parseInviteTheme("classico"), "romantico");
+  // Desconhecido cai em romântico
+  assert.equal(parseInviteTheme("desconhecido"), "romantico");
+});
+
+test("parsers de módulos sanitizam entradas e respeitam limites", () => {
+  // Menu
+  const menu = parseMenu([
+    { category: "entradas", title: "Bruschetta", description: "Tomate e manjericão" },
+    { category: "invalida", title: "Outro" },
+  ]);
+  assert.equal(menu.length, 2);
+  assert.equal(menu[0].category, "entradas");
+  assert.equal(menu[1].category, "outro");
+
+  // Groomsmen
+  const groomsmen = parseGroomsmen([
+    { name: "Lucas", role: "padrinho", photoUrl: "https://example.com/lucas.jpg" },
+    { name: "Mariana", role: "madrinha", photoUrl: "" },
+  ]);
+  assert.equal(groomsmen.length, 2);
+  assert.equal(groomsmen[0].photoUrl, "https://example.com/lucas.jpg");
+  assert.equal(groomsmen[1].photoUrl, "");
+  assert.throws(
+    () => parseGroomsmen([{ name: "Mariana", role: "madrinha", photoUrl: "http://inseguro.com/foto.jpg" }]),
+    /precisa ser um link HTTPS/
+  );
+
+  // Quiz
+  const quiz = parseQuiz([
+    {
+      question: "Onde se conheceram?",
+      options: ["Praia", "Faculdade", "Parque"],
+      answerIndex: 1,
+      explanation: "Em 2018!",
+    },
+    {
+      question: "Fora dos limites?",
+      options: ["A", "B"],
+      answerIndex: 99, // Inválido
+    },
+  ]);
+  assert.equal(quiz.length, 2);
+  assert.equal(quiz[0].answerIndex, 1);
+  assert.equal(quiz[1].answerIndex, 1); // Ajustado para o último índice válido (options.length - 1)
+
+  // Hotéis
+  const hotels = parseHotels([
+    { name: "Hotel Praia", address: "Av. Mar", discountCode: "AMOR10", link: "https://hotel.com" },
+  ]);
+  assert.equal(hotels.length, 1);
+  assert.equal(hotels[0].discountCode, "AMOR10");
+
+  // Guia
+  const guide = parseCityGuide([
+    { category: "restaurante", name: "Pizzaria Bela", tip: "Peça a de burrata" },
+  ]);
+  assert.equal(guide.length, 1);
+  assert.equal(guide[0].category, "restaurante");
+
+  // FAQ
+  const faq = parseFaq([
+    { question: "Tem estacionamento?", answer: "Sim, gratuito no local." },
+  ]);
+  assert.equal(faq.length, 1);
+  assert.equal(faq[0].question, "Tem estacionamento?");
+});
+
+test("readInviteContent carrega configurações visuais completas sem destruir dados", () => {
+  const content = readInviteContent({
+    inviteTheme: "editorial",
+    videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    showVideo: true,
+    showMenu: true,
+    sectionStylesJson: JSON.stringify({ hero: "editorial", countdown: "painel" }),
+    sectionOrderJson: JSON.stringify(["hero", "countdown", "video", "rsvp"]),
+    menuJson: JSON.stringify([{ category: "principais", title: "Risoto de Cogumelos", description: "Com trufas" }]),
+  });
+
+  assert.equal(content.inviteTheme, "editorial");
+  assert.equal(content.videoUrl, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  assert.equal(content.showVideo, true);
+  assert.equal(content.sectionStyles.hero, "editorial");
+  assert.equal(content.sectionStyles.countdown, "painel");
+  assert.deepEqual(content.sectionOrder, ["hero", "countdown", "video", "rsvp"]);
+  assert.equal(content.menu.length, 1);
+  assert.equal(content.menu[0].title, "Risoto de Cogumelos");
+});
+

@@ -94,10 +94,40 @@ model Settings {
   showSchedule      Boolean @default(true)
   showDress         Boolean @default(true)
   showGifts         Boolean @default(true)
+  videoUrl          String  @default("")
+  menuJson          String  @default("[]")
+  groomsmenJson     String  @default("[]")
+  quizJson          String  @default("[]")
+  hotelsJson        String  @default("[]")
+  cityGuideJson     String  @default("[]")
+  faqJson           String  @default("[]")
+  guestPhotosJson   String  @default("[]")
+  sectionStylesJson String  @default("{}")
+  sectionOrderJson  String  @default("[]")
+  showVideo         Boolean @default(false)
+  showMenu          Boolean @default(false)
+  showGroomsmen     Boolean @default(false)
+  showQuiz          Boolean @default(false)
+  showHotels        Boolean @default(false)
+  showCityGuide     Boolean @default(false)
+  showFaq           Boolean @default(false)
+  showGuestAlbum    Boolean @default(false)
   inviteTemplate    String  @default("Olá, {nome}! ❤️\n\nPreparamos um convite muito especial para você.\n\nNós vamos nos casar e ficaremos muito felizes em compartilhar esse momento com você!\n\n📅 Data: {data}\n🕒 Horário: {horario}\n\nAbra seu convite especial:\n{link}\n\nEsperamos você! Com carinho, {casal}.")
   saveTheDateTemplate String @default("Olá, {nome}! Guarde esta data com carinho.\n\n📅 {data}, às {horario}\n\n{casal} vão se casar. O convite completo está aqui:\n{link}")
   reminderTemplate  String  @default("Olá, {nome}! Ainda não recebemos sua resposta para o casamento de {casal}.\n\n📅 {data} às {horario}\n\nAbra o convite e confirme sua presença:\n{link}")
   soonTemplate      String  @default("Olá, {nome}! O casamento de {casal} está chegando.\n\n📅 {data} às {horario}\n\nVeja os detalhes no seu convite:\n{link}")
+}
+
+model GuestPhoto {
+  id        String   @id @default(uuid())
+  guestName String
+  photoUrl  String
+  caption   String?
+  status    String   @default("pending") // pending, approved, rejected
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model WeddingGuest {

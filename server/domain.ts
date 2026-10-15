@@ -421,13 +421,266 @@ function flag(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+export type MenuItem = {
+  id: string;
+  category: "entradas" | "principais" | "sobremesas" | "bebidas" | "outro";
+  title: string;
+  description: string;
+};
+
+export type GroomsmanItem = {
+  id: string;
+  name: string;
+  role: "padrinho" | "madrinha" | "dama" | "pajem" | "outro";
+  photoUrl: string;
+  description: string;
+};
+
+export type QuizItem = {
+  id: string;
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+};
+
+export type HotelItem = {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  link: string;
+  discountCode: string;
+  notes: string;
+};
+
+export type CityGuideItem = {
+  id: string;
+  category: "restaurante" | "beleza" | "passeio" | "hotel" | "outro";
+  name: string;
+  tip: string;
+  address: string;
+  link: string;
+};
+
+export type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+export type SectionStyles = {
+  hero?: string;
+  countdown?: string;
+  story?: string;
+  ceremony?: string;
+  gallery?: string;
+  registry?: string;
+  faq?: string;
+  album?: string;
+  menu?: string;
+  groomsmen?: string;
+};
+
+export const DEFAULT_SECTION_ORDER = [
+  "hero",
+  "countdown",
+  "story",
+  "video",
+  "ceremony",
+  "schedule",
+  "menu",
+  "groomsmen",
+  "gallery",
+  "quiz",
+  "hotels",
+  "cityGuide",
+  "faq",
+  "manual",
+  "registry",
+  "guestAlbum",
+  "rsvp",
+];
+
+export function parseMenu(value: unknown): MenuItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 30).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const title = clipText(r.title, 100);
+    if (!title) return [];
+    const category = String(r.category || "entradas").toLowerCase() as MenuItem["category"];
+    return [{
+      id: String(r.id || `menu-${idx}-${Date.now()}`),
+      category: ["entradas", "principais", "sobremesas", "bebidas"].includes(category) ? category : "outro",
+      title,
+      description: clipText(r.description, 300),
+    }];
+  });
+}
+
+export function parseGroomsmen(value: unknown): GroomsmanItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 40).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const name = clipText(r.name, 80);
+    if (!name) return [];
+    const role = String(r.role || "padrinho").toLowerCase() as GroomsmanItem["role"];
+    return [{
+      id: String(r.id || `groomsman-${idx}-${Date.now()}`),
+      name,
+      role: ["padrinho", "madrinha", "dama", "pajem"].includes(role) ? role : "outro",
+      photoUrl: httpsUrlOrEmpty(r.photoUrl, "Foto do padrinho/madrinha"),
+      description: clipText(r.description, 200),
+    }];
+  });
+}
+
+export function parseQuiz(value: unknown): QuizItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 15).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const question = clipText(r.question, 160);
+    if (!question) return [];
+    const optionsRaw = Array.isArray(r.options) ? r.options : [];
+    const options = optionsRaw.slice(0, 4).map((opt) => clipText(opt, 100)).filter(Boolean);
+    if (options.length < 2) return [];
+    const answerIndex = Math.max(0, Math.min(options.length - 1, Number(r.answerIndex) || 0));
+    return [{
+      id: String(r.id || `quiz-${idx}-${Date.now()}`),
+      question,
+      options,
+      answerIndex,
+      explanation: clipText(r.explanation, 200),
+    }];
+  });
+}
+
+export function parseHotels(value: unknown): HotelItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 10).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const name = clipText(r.name, 100);
+    if (!name) return [];
+    return [{
+      id: String(r.id || `hotel-${idx}-${Date.now()}`),
+      name,
+      address: clipText(r.address, 160),
+      phone: clipText(r.phone, 30),
+      link: httpsUrlOrEmpty(r.link, "Link do hotel"),
+      discountCode: clipText(r.discountCode, 40),
+      notes: clipText(r.notes, 200),
+    }];
+  });
+}
+
+export function parseCityGuide(value: unknown): CityGuideItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 20).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const name = clipText(r.name, 100);
+    if (!name) return [];
+    const category = String(r.category || "restaurante").toLowerCase() as CityGuideItem["category"];
+    return [{
+      id: String(r.id || `guide-${idx}-${Date.now()}`),
+      category: ["restaurante", "beleza", "passeio", "hotel"].includes(category) ? category : "outro",
+      name,
+      tip: clipText(r.tip, 250),
+      address: clipText(r.address, 160),
+      link: httpsUrlOrEmpty(r.link, "Link da dica"),
+    }];
+  });
+}
+
+export function parseFaq(value: unknown): FaqItem[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return [];
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 20).flatMap((item, idx) => {
+    if (!item || typeof item !== "object") return [];
+    const r = item as Record<string, unknown>;
+    const question = clipText(r.question, 160);
+    const answer = clipText(r.answer, 600);
+    if (!question || !answer) return [];
+    return [{ id: String(r.id || `faq-${idx}-${Date.now()}`), question, answer }];
+  });
+}
+
+export function parseSectionStyles(value: unknown): SectionStyles {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return {};
+    try { raw = JSON.parse(raw); } catch { return {}; }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const res: SectionStyles = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.length < 50) {
+      res[k as keyof SectionStyles] = clipText(v, 40);
+    }
+  }
+  return res;
+}
+
+export function parseSectionOrder(value: unknown): string[] {
+  let raw = value;
+  if (typeof raw === "string") {
+    if (!raw.trim()) return DEFAULT_SECTION_ORDER;
+    try { raw = JSON.parse(raw); } catch { return DEFAULT_SECTION_ORDER; }
+  }
+  if (!Array.isArray(raw)) return DEFAULT_SECTION_ORDER;
+  const filtered = raw.map((s) => String(s).trim()).filter((s) => DEFAULT_SECTION_ORDER.includes(s));
+  return filtered.length > 0 ? filtered : DEFAULT_SECTION_ORDER;
+}
+
 export type InviteSettings = {
   inviteTheme: InviteTheme;
   openingText: string;
   romanticLine: string;
   coverPhotoUrl: string;
+  videoUrl: string;
   galleryJson: string;
   scheduleJson: string;
+  menuJson: string;
+  groomsmenJson: string;
+  quizJson: string;
+  hotelsJson: string;
+  cityGuideJson: string;
+  faqJson: string;
+  sectionStylesJson: string;
+  sectionOrderJson: string;
   ceremonyNotes: string;
   receptionNotes: string;
   extraInfo: string;
@@ -437,6 +690,14 @@ export type InviteSettings = {
   showSchedule: boolean;
   showDress: boolean;
   showGifts: boolean;
+  showVideo: boolean;
+  showMenu: boolean;
+  showGroomsmen: boolean;
+  showQuiz: boolean;
+  showHotels: boolean;
+  showCityGuide: boolean;
+  showFaq: boolean;
+  showGuestAlbum: boolean;
   inviteTemplate: string;
   saveTheDateTemplate: string;
   reminderTemplate: string;
@@ -446,13 +707,31 @@ export type InviteSettings = {
 export function parseInviteSettings(body: Record<string, unknown>): InviteSettings {
   const gallery = parseGallery(body.gallery ?? body.galleryJson ?? "[]");
   const schedule = parseSchedule(body.schedule ?? body.scheduleJson ?? "[]");
+  const menu = parseMenu(body.menu ?? body.menuJson ?? "[]");
+  const groomsmen = parseGroomsmen(body.groomsmen ?? body.groomsmenJson ?? "[]");
+  const quiz = parseQuiz(body.quiz ?? body.quizJson ?? "[]");
+  const hotels = parseHotels(body.hotels ?? body.hotelsJson ?? "[]");
+  const cityGuide = parseCityGuide(body.cityGuide ?? body.cityGuideJson ?? "[]");
+  const faq = parseFaq(body.faq ?? body.faqJson ?? "[]");
+  const sectionStyles = parseSectionStyles(body.sectionStyles ?? body.sectionStylesJson ?? "{}");
+  const sectionOrder = parseSectionOrder(body.sectionOrder ?? body.sectionOrderJson ?? "[]");
+
   return {
     inviteTheme: parseInviteTheme(body.inviteTheme),
     openingText: clipText(body.openingText, 160, DEFAULT_OPENING_TEXT),
     romanticLine: clipText(body.romanticLine, 240),
     coverPhotoUrl: httpsUrlOrEmpty(body.coverPhotoUrl, "A foto de capa"),
+    videoUrl: httpsUrlOrEmpty(body.videoUrl, "O link de vídeo"),
     galleryJson: JSON.stringify(gallery),
     scheduleJson: JSON.stringify(schedule),
+    menuJson: JSON.stringify(menu),
+    groomsmenJson: JSON.stringify(groomsmen),
+    quizJson: JSON.stringify(quiz),
+    hotelsJson: JSON.stringify(hotels),
+    cityGuideJson: JSON.stringify(cityGuide),
+    faqJson: JSON.stringify(faq),
+    sectionStylesJson: JSON.stringify(sectionStyles),
+    sectionOrderJson: JSON.stringify(sectionOrder),
     ceremonyNotes: String(body.ceremonyNotes ?? "").trim().slice(0, 500),
     receptionNotes: String(body.receptionNotes ?? "").trim().slice(0, 500),
     extraInfo: String(body.extraInfo ?? "").trim().slice(0, 800),
@@ -462,6 +741,14 @@ export function parseInviteSettings(body: Record<string, unknown>): InviteSettin
     showSchedule: flag(body.showSchedule, true),
     showDress: flag(body.showDress, true),
     showGifts: flag(body.showGifts, true),
+    showVideo: flag(body.showVideo, false),
+    showMenu: flag(body.showMenu, false),
+    showGroomsmen: flag(body.showGroomsmen, false),
+    showQuiz: flag(body.showQuiz, false),
+    showHotels: flag(body.showHotels, false),
+    showCityGuide: flag(body.showCityGuide, false),
+    showFaq: flag(body.showFaq, false),
+    showGuestAlbum: flag(body.showGuestAlbum, false),
     inviteTemplate: String(body.inviteTemplate ?? "").trim().slice(0, 1500) || DEFAULT_INVITE_TEMPLATE,
     saveTheDateTemplate: String(body.saveTheDateTemplate ?? "").trim().slice(0, 1500) || DEFAULT_SAVE_THE_DATE_TEMPLATE,
     reminderTemplate: String(body.reminderTemplate ?? "").trim().slice(0, 1500) || DEFAULT_REMINDER_TEMPLATE,
@@ -469,28 +756,57 @@ export function parseInviteSettings(body: Record<string, unknown>): InviteSettin
   };
 }
 
-export function readInviteContent(settings: (Partial<Omit<InviteSettings, "inviteTheme">> & { inviteTheme?: string; gallery?: unknown; schedule?: unknown }) | null | undefined) {
+export function readInviteContent(settings: (Partial<Omit<InviteSettings, "inviteTheme">> & {
+  inviteTheme?: string;
+  gallery?: unknown;
+  schedule?: unknown;
+  menu?: unknown;
+  groomsmen?: unknown;
+  quiz?: unknown;
+  hotels?: unknown;
+  cityGuide?: unknown;
+  faq?: unknown;
+  sectionStyles?: unknown;
+  sectionOrder?: unknown;
+}) | null | undefined) {
   let gallery: GalleryItem[] = [];
   let schedule: ScheduleItem[] = [];
-  const gallerySource = typeof settings?.galleryJson === "string" ? settings.galleryJson : settings?.gallery ?? "[]";
-  const scheduleSource = typeof settings?.scheduleJson === "string" ? settings.scheduleJson : settings?.schedule ?? "[]";
-  try {
-    gallery = parseGallery(gallerySource);
-  } catch {
-    gallery = [];
-  }
-  try {
-    schedule = parseSchedule(scheduleSource);
-  } catch {
-    schedule = [];
-  }
+  let menu: MenuItem[] = [];
+  let groomsmen: GroomsmanItem[] = [];
+  let quiz: QuizItem[] = [];
+  let hotels: HotelItem[] = [];
+  let cityGuide: CityGuideItem[] = [];
+  let faq: FaqItem[] = [];
+  let sectionStyles: SectionStyles = {};
+  let sectionOrder: string[] = DEFAULT_SECTION_ORDER;
+
+  try { gallery = parseGallery(typeof settings?.galleryJson === "string" ? settings.galleryJson : settings?.gallery ?? "[]"); } catch { gallery = []; }
+  try { schedule = parseSchedule(typeof settings?.scheduleJson === "string" ? settings.scheduleJson : settings?.schedule ?? "[]"); } catch { schedule = []; }
+  try { menu = parseMenu(typeof settings?.menuJson === "string" ? settings.menuJson : settings?.menu ?? "[]"); } catch { menu = []; }
+  try { groomsmen = parseGroomsmen(typeof settings?.groomsmenJson === "string" ? settings.groomsmenJson : settings?.groomsmen ?? "[]"); } catch { groomsmen = []; }
+  try { quiz = parseQuiz(typeof settings?.quizJson === "string" ? settings.quizJson : settings?.quiz ?? "[]"); } catch { quiz = []; }
+  try { hotels = parseHotels(typeof settings?.hotelsJson === "string" ? settings.hotelsJson : settings?.hotels ?? "[]"); } catch { hotels = []; }
+  try { cityGuide = parseCityGuide(typeof settings?.cityGuideJson === "string" ? settings.cityGuideJson : settings?.cityGuide ?? "[]"); } catch { cityGuide = []; }
+  try { faq = parseFaq(typeof settings?.faqJson === "string" ? settings.faqJson : settings?.faq ?? "[]"); } catch { faq = []; }
+  try { sectionStyles = parseSectionStyles(typeof settings?.sectionStylesJson === "string" ? settings.sectionStylesJson : settings?.sectionStyles ?? "{}"); } catch { sectionStyles = {}; }
+  try { sectionOrder = parseSectionOrder(typeof settings?.sectionOrderJson === "string" ? settings.sectionOrderJson : settings?.sectionOrder ?? "[]"); } catch { sectionOrder = DEFAULT_SECTION_ORDER; }
+
   return {
     inviteTheme: parseInviteTheme(settings?.inviteTheme),
     openingText: settings?.openingText || DEFAULT_OPENING_TEXT,
     romanticLine: settings?.romanticLine || "",
     coverPhotoUrl: settings?.coverPhotoUrl || "",
+    videoUrl: settings?.videoUrl || "",
     gallery,
     schedule,
+    menu,
+    groomsmen,
+    quiz,
+    hotels,
+    cityGuide,
+    faq,
+    sectionStyles,
+    sectionOrder,
     ceremonyNotes: settings?.ceremonyNotes || "",
     receptionNotes: settings?.receptionNotes || "",
     extraInfo: settings?.extraInfo || "",
@@ -500,6 +816,14 @@ export function readInviteContent(settings: (Partial<Omit<InviteSettings, "invit
     showSchedule: settings?.showSchedule !== false,
     showDress: settings?.showDress !== false,
     showGifts: settings?.showGifts !== false,
+    showVideo: Boolean(settings?.showVideo),
+    showMenu: Boolean(settings?.showMenu),
+    showGroomsmen: Boolean(settings?.showGroomsmen),
+    showQuiz: Boolean(settings?.showQuiz),
+    showHotels: Boolean(settings?.showHotels),
+    showCityGuide: Boolean(settings?.showCityGuide),
+    showFaq: Boolean(settings?.showFaq),
+    showGuestAlbum: Boolean(settings?.showGuestAlbum),
   };
 }
 

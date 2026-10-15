@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../api';
 import { whatsappChatUrl } from '../../server/domain';
 import { ProdutoComprado, EnxovalItem, SettingsData } from '../types';
-import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, LogIn, LogOut, Shield, ShoppingBag, Gift, MessageSquare, X, Save, Phone, Database, Eye, EyeOff, Download, Upload, CalendarDays, CheckCircle2, Users, Sparkles } from 'lucide-react';
 import AdminGuests from './AdminGuests';
 import AdminInviteSettings from './AdminInviteSettings';
+import AdminVisualEditor from './AdminVisualEditor';
 
 export default function AdminPanel() {
   type Notice = { type: 'success' | 'error'; message: string };
@@ -18,7 +19,7 @@ export default function AdminPanel() {
   };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'guests' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'purchased' | 'registry' | 'reservations' | 'rsvps' | 'guests' | 'siteEditor' | 'settings'>('overview');
 
   // Data states
   const [purchased, setPurchased] = useState<ProdutoComprado[]>([]);
@@ -488,6 +489,7 @@ export default function AdminPanel() {
       <div className="flex flex-wrap gap-4 mb-12">
         {[
           { id: 'overview', label: 'Visão geral', icon: Shield },
+          { id: 'siteEditor', label: 'Editor do Site', icon: Sparkles },
           { id: 'registry', label: 'Enxoval', icon: Gift },
           { id: 'purchased', label: 'Comprados', icon: ShoppingBag },
           { id: 'reservations', label: 'Presentes reservados', icon: MessageSquare },
@@ -512,7 +514,7 @@ export default function AdminPanel() {
       <div className="glass-card rounded-[40px] p-8 md:p-12">
         <div className="flex justify-between items-center mb-10">
           <h3 className="text-3xl font-serif">
-            {activeTab === 'overview' ? 'Visão geral' : activeTab === 'registry' ? 'Lista de presentes' : activeTab === 'purchased' ? 'Itens adquiridos' : activeTab === 'reservations' ? 'Presentes reservados' : activeTab === 'rsvps' ? 'Confirmações do convite' : 'Configurações gerais'}
+            {activeTab === 'overview' ? 'Visão geral' : activeTab === 'siteEditor' ? 'Editor Visual Amorei Premium' : activeTab === 'registry' ? 'Lista de presentes' : activeTab === 'purchased' ? 'Itens adquiridos' : activeTab === 'reservations' ? 'Presentes reservados' : activeTab === 'rsvps' ? 'Confirmações do convite' : activeTab === 'guests' ? 'Lista de convidados' : 'Configurações gerais'}
           </h3>
           <div className="flex flex-wrap gap-4 justify-end">
             {activeTab === 'registry' && selectedRegistryIds.length > 0 && (
@@ -524,7 +526,7 @@ export default function AdminPanel() {
                 <Trash2 size={16} /> Excluir selecionados ({selectedRegistryIds.length})
               </button>
             )}
-            {activeTab !== 'reservations' && activeTab !== 'rsvps' && activeTab !== 'settings' && activeTab !== 'overview' && (
+            {activeTab !== 'reservations' && activeTab !== 'rsvps' && activeTab !== 'settings' && activeTab !== 'overview' && activeTab !== 'siteEditor' && activeTab !== 'guests' && (
               <button
                 onClick={() => { setEditingItem(null); setFormData({}); setIsModalOpen(true); }}
                 className="flex items-center gap-2 px-6 py-3 bg-gold text-white rounded-xl text-[10px] uppercase tracking-widest font-bold shadow-lg shadow-gold/20"
@@ -786,7 +788,7 @@ export default function AdminPanel() {
               )}
 
               {settingsTab === 'invite' && (
-                <AdminInviteSettings settings={pixSettings} onChange={setPixSettings} onSave={handleSavePix} />
+                <AdminVisualEditor settings={pixSettings} onChange={setPixSettings} onSave={handleSavePix} />
               )}
 
               {settingsTab === 'whatsapp' && (
@@ -874,7 +876,13 @@ export default function AdminPanel() {
                 </div>
               )}
             </div>
-          ) : activeTab === 'overview' ? null : activeTab === 'guests' ? (
+          ) : activeTab === 'overview' ? null : activeTab === 'siteEditor' ? (
+            <AdminVisualEditor
+              settings={pixSettings}
+              onChange={setPixSettings}
+              onSave={handleSavePix}
+            />
+          ) : activeTab === 'guests' ? (
             <AdminGuests
               onNotice={showNotice}
               coupleNames={pixSettings.coupleNames || 'Tais & Yran'}

@@ -1140,6 +1140,81 @@ app.delete("/api/music", authenticate, async (_req, res) => {
   res.json({ success: true, custom: false });
 });
 
+// Álbum dos Convidados (Guest Photos)
+app.get("/api/guest-photos", async (_req, res) => {
+  try {
+    const photos = await prisma.guestPhoto.findMany({
+      where: { status: "approved" },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json({ photos });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar fotos dos convidados." });
+  }
+});
+
+app.post("/api/guest-photos", async (req, res) => {
+  try {
+    const guestName = String(req.body?.guestName ?? "").trim().slice(0, 80);
+    const photoUrl = String(req.body?.photoUrl ?? "").trim();
+    const caption = String(req.body?.caption ?? "").trim().slice(0, 200);
+    if (!guestName) return res.status(400).json({ error: "Informe seu nome." });
+    if (!photoUrl || !photoUrl.startsWith("http")) return res.status(400).json({ error: "Envie um link de foto válido." });
+
+    const photo = await prisma.guestPhoto.create({
+      data: {
+        guestName,
+        photoUrl,
+        caption: caption || null,
+        status: "pending",
+      },
+    });
+    res.json({ success: true, photo, message: "Foto enviada com sucesso! Ela aparecerá no álbum assim que for aprovada pelos noivos." });
+  } catch (err) {
+    console.error("POST /api/guest-photos:", err);
+    res.status(500).json({ error: "Não foi possível enviar a foto." });
+  }
+});
+
+app.get("/api/admin/guest-photos", authenticate, async (_req, res) => {
+  try {
+    const photos = await prisma.guestPhoto.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ photos });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar fotos para moderação." });
+  }
+});
+
+app.put("/api/admin/guest-photos/:id", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const status = String(req.body?.status ?? "approved");
+    if (!["pending", "approved", "rejected"].includes(status)) {
+      return res.status(400).json({ error: "Status inválido." });
+    }
+    const photo = await prisma.guestPhoto.update({
+      where: { id },
+      data: { status },
+    });
+    res.json({ success: true, photo });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao atualizar status da foto." });
+  }
+});
+
+app.delete("/api/admin/guest-photos/:id", authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.guestPhoto.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao excluir foto." });
+  }
+});
+
 // Settings
 app.get("/api/settings", async (req, res) => {
   let settings = await prisma.settings.findUnique({ where: { id: "global" } });

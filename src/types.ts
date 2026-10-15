@@ -66,8 +66,27 @@ export interface SettingsData {
   showSchedule?: boolean;
   showDress?: boolean;
   showGifts?: boolean;
+  showVideo?: boolean;
+  showMenu?: boolean;
+  showGroomsmen?: boolean;
+  showQuiz?: boolean;
+  showHotels?: boolean;
+  showCityGuide?: boolean;
+  showFaq?: boolean;
+  showGuestAlbum?: boolean;
+  videoUrl?: string;
+  menuJson?: string;
+  groomsmenJson?: string;
+  quizJson?: string;
+  hotelsJson?: string;
+  cityGuideJson?: string;
+  faqJson?: string;
+  guestPhotosJson?: string;
+  sectionStylesJson?: string;
+  sectionOrderJson?: string;
   inviteTemplate?: string;
   saveTheDateTemplate?: string;
   reminderTemplate?: string;
   soonTemplate?: string;
 }
+
