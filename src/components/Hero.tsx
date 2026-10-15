@@ -2,13 +2,14 @@ import { motion } from 'motion/react';
 import Countdown from './Countdown';
 
 interface HeroProps {
-  onNavigate: (page: 'home' | 'purchased' | 'registry' | 'admin') => void;
+  onNavigate: (page: 'home' | 'purchased' | 'registry' | 'admin' | 'invitation') => void;
   weddingDate: string;
   weddingDateLabel: string;
   coupleNames: string;
+  ceremonyTime?: string;
 }
 
-export default function Hero({ onNavigate, weddingDate, weddingDateLabel, coupleNames }: HeroProps) {
+export default function Hero({ onNavigate, weddingDate, weddingDateLabel, coupleNames, ceremonyTime = '16:00' }: HeroProps) {
   return (
     <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-20 overflow-hidden">
       {/* Background elements */}
@@ -30,12 +31,13 @@ export default function Hero({ onNavigate, weddingDate, weddingDateLabel, couple
         </p>
         
         <div className="mb-16">
-          <Countdown weddingDate={weddingDate} />
+          <Countdown weddingDate={weddingDate} ceremonyTime={ceremonyTime} />
         </div>
 
         <p className="text-xs uppercase tracking-[0.25em] text-gold/70 mb-10">{weddingDateLabel}</p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => onNavigate('invitation')} className="px-10 py-4 bg-ink text-white rounded-full text-sm uppercase tracking-widest font-medium shadow-xl hover:opacity-90 transition-all">Convite Online</motion.button>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
