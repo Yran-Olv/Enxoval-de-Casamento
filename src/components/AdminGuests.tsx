@@ -17,6 +17,7 @@ import {
   Edit2,
   Trash2,
   CheckCircle2,
+  Clock,
   AlertCircle,
   Sparkles,
   MessageCircle,
