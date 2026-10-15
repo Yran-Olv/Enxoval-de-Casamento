@@ -50,11 +50,31 @@ export default function AdminInviteSettings({ settings, onChange, onSave }: {
     <form onSubmit={onSave} className="space-y-4">
       <h4 className="font-serif text-2xl">Convite</h4>
       <p className="text-sm opacity-70">Trocar o estilo não apaga os textos. A pré-visualização abre o rascunho atual sem gravar respostas.</p>
-      <label className="block text-xs font-bold uppercase tracking-widest opacity-60">Estilo
-        <select value={settings.inviteTheme || 'classico'} onChange={(e) => set({ inviteTheme: e.target.value })} className="mt-2 w-full rounded-2xl border border-gold/10 bg-white/70 px-4 py-3 text-sm normal-case">
-          {INVITE_THEMES.map((theme) => <option key={theme} value={theme}>{INVITE_PALETTES[theme].label}</option>)}
-        </select>
-      </label>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest opacity-60">Modelos do site de casamento</p>
+        <p className="mt-1 text-sm opacity-70">Seis estilos completos. A troca muda a identidade visual, sem apagar os textos, fotos, locais ou respostas.</p>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {INVITE_THEMES.map((theme) => {
+            const palette = INVITE_PALETTES[theme];
+            const selected = (settings.inviteTheme || 'romantico') === theme || (settings.inviteTheme === 'classico' && theme === 'romantico');
+            return (
+              <button key={theme} type="button" onClick={() => set({ inviteTheme: theme })} aria-pressed={selected}
+                className="overflow-hidden rounded-2xl border text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-2"
+                style={{ borderColor: selected ? palette.accent : '#e7ded4', boxShadow: selected ? `0 0 0 2px ${palette.accent}30` : 'none', background: palette.bg, color: palette.ink }}>
+                <div className="flex min-h-28 flex-col items-center justify-center px-3 py-4 text-center" style={{ background: palette.bg }}>
+                  <span className="text-3xl" style={{ fontFamily: '"Great Vibes", cursive' }}>Tais & Yran</span>
+                  <span className="mt-2 text-[9px] uppercase tracking-[.22em]" style={{ color: palette.muted }}>02 · fevereiro · 2027</span>
+                  <span className="mt-2 h-px w-12" style={{ background: palette.accent }} />
+                </div>
+                <div className="flex items-center justify-between gap-2 px-3 py-3" style={{ background: palette.paper, borderTop: `1px solid ${palette.line}` }}>
+                  <span className="text-xs font-semibold">{palette.label}</span>
+                  <span className="text-[10px] uppercase tracking-wider">{selected ? 'Selecionado' : 'Usar modelo'}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <label className="block text-xs font-bold uppercase tracking-widest opacity-60">Texto do envelope
         <input value={settings.openingText || ''} onChange={(e) => set({ openingText: e.target.value })} className="mt-2 w-full rounded-2xl border border-gold/10 px-4 py-3 text-sm normal-case" />
       </label>
