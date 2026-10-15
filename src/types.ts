@@ -42,4 +42,12 @@ export interface SettingsData {
   guestPixTemplate?: string;
   whaticketSign?: boolean;
   whaticketClose?: boolean;
+  ceremonyTime?: string;
+  ceremonyVenue?: string;
+  ceremonyAddress?: string;
+  receptionVenue?: string;
+  receptionAddress?: string;
+  invitationMessage?: string;
+  rsvpDeadline?: string;
+  dressCode?: string;
 }
